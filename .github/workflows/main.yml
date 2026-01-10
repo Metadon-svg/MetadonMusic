@@ -17,18 +17,15 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android NDK
-        uses: n0rtzh/setup-android-ndk@v1
-        with:
-          ndk-version: r25c
-
+      # Мы не используем сторонние экшены, просто создаем wrapper
       - name: Generate Wrapper
         run: gradle wrapper --gradle-version 8.2.2
 
       - name: Build with Gradle
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          # Мы добавим флаг, чтобы Gradle сам принял лицензии NDK если нужно
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
