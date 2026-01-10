@@ -15,9 +15,18 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // Исправленный блок NDK
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+
+        // ВМЕСТО python { ... } используем этот блок:
+        // Это заставит Gradle найти Python, даже если Kotlin его "не видит"
+        extensions.configure<com.chaquo.python.android.PythonExtension>("python") {
+            version = "3.10"
+            pip {
+                install("ytmusicapi")
+                install("yt-dlp")
+            }
         }
     }
 
@@ -39,16 +48,6 @@ android {
     }
 }
 
-// САМОЕ ВАЖНОЕ: Настройка Python вынесена в самый конец файла.
-// Это решает проблему "Unresolved reference: android"
-python {
-    version = "3.10"
-    pip {
-        install("ytmusicapi")
-        install("yt-dlp")
-    }
-}
-
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.activity:activity-compose:1.8.2")
@@ -59,10 +58,11 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.1.2")
     implementation("androidx.compose.material:material-icons-extended:1.5.4")
     
-    // Плеер
+    // Плеер и работа с медиа
     implementation("androidx.media3:media3-exoplayer:1.2.0")
     implementation("androidx.media3:media3-session:1.2.0")
+    implementation("androidx.media3:media3-ui:1.2.0")
     
-    // Обложки
+    // Загрузка обложек
     implementation("io.coil-kt:coil-compose:2.5.0")
 }
