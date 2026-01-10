@@ -32,8 +32,9 @@ import com.chaquo.python.PyObject
 import com.chaquo.python.android.AndroidPlatform
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
+// Модель данных
 data class Track(val id: String, val title: String, val artist: String, val artistId: String, val cover: String)
 
 class MusicViewModel : ViewModel() {
@@ -41,37 +42,40 @@ class MusicViewModel : ViewModel() {
     val newTracks = MutableStateFlow<List<Track>>(emptyList())
     val artistTracks = MutableStateFlow<List<Track>>(emptyList())
     val currentTrack = MutableStateFlow<Track?>(null)
-    val lyricsText = MutableStateFlow("Загрузка текста...")
-    
-    // Используем StateFlow вместо mutableStateOf для стабильности в CI
-    val isPlayerFull = MutableStateFlow(false)
-    val isPlaying = MutableStateFlow(false)
-    val currentPos = MutableStateFlow(0L)
-    val duration = MutableStateFlow(0L)
-    
-    var exoPlayer: ExoPlayer? = null
+    val lyricsText = MutableStateFlow("Загрузка...")
 
-    fun initPlayer(ctx: android.content.Context) {
-        if (exoPlayer == null) {
-            exoPlayer = ExoPlayer.Builder(ctx).build().apply {
+    // ПЕРЕИМЕНОВАНО, чтобы Гитхаб не путался
+    val isPlayerActive = mutableStateOf(false)
+    val isMusicPlaying = mutableStateOf(false)
+    val playbackPosition = mutableLongStateOf(0L)
+    val trackDurationTime = mutableLongStateOf(0L)
+    
+    var player: ExoPlayer? = null
+
+    fun setupPlayer(ctx: android.content.Context) {
+        if (player == null) {
+            player = ExoPlayer.Builder(ctx).build().apply {
                 addListener(object : Player.Listener {
-                    override fun onIsPlayingChanged(playing: Boolean) {
-                        isPlaying.value = playing
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        isMusicPlaying.value = isPlaying
                     }
                     override fun onPlaybackStateChanged(state: Int) {
                         if (state == Player.STATE_READY) {
-                            duration.value = duration.value.coerceAtLeast(this@apply.duration.coerceAtLeast(0L))
+                            // Берем длительность только когда плеер готов
+                            trackDurationTime.value = duration.coerceAtLeast(0L)
                         }
                     }
                 })
             }
-            loadHome()
+            loadHomeData()
+            
+            // Цикл обновления позиции
             CoroutineScope(Dispatchers.Main).launch {
                 while(true) {
-                    exoPlayer?.let { 
+                    player?.let {
                         if(it.isPlaying) {
-                            currentPos.value = it.currentPosition
-                            duration.value = it.duration.coerceAtLeast(0L)
+                            playbackPosition.value = it.currentPosition
+                            trackDurationTime.value = it.duration.coerceAtLeast(0L)
                         }
                     }
                     delay(1000)
@@ -80,42 +84,43 @@ class MusicViewModel : ViewModel() {
         }
     }
 
-    private fun loadHome() = CoroutineScope(Dispatchers.IO).launch {
+    private fun loadHomeData() = CoroutineScope(Dispatchers.IO).launch {
         try {
             val py = Python.getInstance().getModule("yt_logic")
-            val homeData = py.callAttr("get_home_data")
-            recTracks.value = mapPyList(homeData.get("rec"))
-            newTracks.value = mapPyList(homeData.get("new"))
+            val data = py.callAttr("get_home_data")
+            recTracks.value = parsePyList(data.get("rec"))
+            newTracks.value = parsePyList(data.get("new"))
         } catch (e: Exception) { e.printStackTrace() }
     }
 
-    fun loadArtist(id: String) = CoroutineScope(Dispatchers.IO).launch {
+    fun loadArtistSongs(id: String) = CoroutineScope(Dispatchers.IO).launch {
         try {
             val py = Python.getInstance().getModule("yt_logic")
-            artistTracks.value = mapPyList(py.callAttr("get_artist_songs", id))
+            artistTracks.value = parsePyList(py.callAttr("get_artist_songs", id))
         } catch (e: Exception) { e.printStackTrace() }
     }
 
-    fun play(track: Track) {
+    fun startPlayback(track: Track) {
         currentTrack.value = track
-        isPlaying.value = true
-        lyricsText.value = "Загрузка..."
+        isMusicPlaying.value = true
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val py = Python.getInstance().getModule("yt_logic")
                 val url = py.callAttr("get_stream_url", track.id).toString()
-                val l = py.callAttr("get_lyrics", track.id).toString()
+                val lyr = py.callAttr("get_lyrics", track.id).toString()
                 withContext(Dispatchers.Main) {
-                    lyricsText.value = l
-                    exoPlayer?.setMediaItem(MediaItem.fromUri(url))
-                    exoPlayer?.prepare()
-                    exoPlayer?.play()
+                    lyricsText.value = lyr
+                    player?.apply {
+                        setMediaItem(MediaItem.fromUri(url))
+                        prepare()
+                        play()
+                    }
                 }
             } catch (e: Exception) { e.printStackTrace() }
         }
     }
 
-    private fun mapPyList(obj: Any?): List<Track> {
+    private fun parsePyList(obj: Any?): List<Track> {
         val list = obj as? List<*> ?: return emptyList()
         return list.map {
             val p = it as PyObject
@@ -129,7 +134,7 @@ class MusicViewModel : ViewModel() {
         }
     }
 
-    fun formatTime(ms: Long): String {
+    fun getTimeString(ms: Long): String {
         val s = (ms / 1000) % 60
         val m = (ms / (1000 * 60)) % 60
         return "%02d:%02d".format(m, s)
@@ -137,26 +142,25 @@ class MusicViewModel : ViewModel() {
 }
 
 @Composable
-fun MainActivityContent() {
+fun MainAppContent() {
     val vm: MusicViewModel = viewModel()
     val ctx = LocalContext.current
-    var screen by remember { mutableStateOf("home") }
-    var artName by remember { mutableStateOf("") }
-    val curTrack by vm.currentTrack.collectAsState()
-    val isFull by vm.isPlayerFull.collectAsState()
+    var currentTab by remember { mutableStateOf("home") }
+    var selectedArtName by remember { mutableStateOf("") }
+    val activeTrack by vm.currentTrack.collectAsState()
 
-    LaunchedEffect(Unit) { vm.initPlayer(ctx) }
-    BackHandler(screen != "home") { screen = "home" }
+    LaunchedEffect(Unit) { vm.setupPlayer(ctx) }
+    BackHandler(currentTab != "home") { currentTab = "home" }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         Scaffold(
             containerColor = Color.Transparent,
             bottomBar = {
-                if (!isFull) {
+                if (!vm.isPlayerActive.value) {
                     Column {
-                        curTrack?.let { MiniPlayer(it, vm) }
+                        activeTrack?.let { SmallPlayerUI(it, vm) }
                         NavigationBar(containerColor = Color.Black) {
-                            NavigationBarItem(selected = screen == "home", onClick = { screen = "home" }, icon = { Icon(Icons.Default.Home, null) }, label = { Text("Главная") })
+                            NavigationBarItem(selected = currentTab == "home", onClick = { currentTab = "home" }, icon = { Icon(Icons.Default.Home, null) }, label = { Text("Главная") })
                             NavigationBarItem(selected = false, onClick = {}, icon = { Icon(Icons.Default.Explore, null) }, label = { Text("Навигатор") })
                             NavigationBarItem(selected = false, onClick = {}, icon = { Icon(Icons.Default.LibraryMusic, null) }, label = { Text("Библиотека") })
                         }
@@ -164,101 +168,109 @@ fun MainActivityContent() {
                 }
             }
         ) { p ->
-            if (screen == "home") HomeTab(vm, p) { id, name -> artName = name; vm.loadArtist(id); screen = "artist" }
-            else ArtistTab(artName, vm, p)
+            if (currentTab == "home") {
+                HomeView(vm, p) { id, name -> selectedArtName = name; vm.loadArtistSongs(id); currentTab = "artist" }
+            } else {
+                ArtistView(selectedArtName, vm, p)
+            }
         }
 
-        if (isFull) FullPlayer(vm)
+        if (vm.isPlayerActive.value) {
+            BigPlayerUI(vm)
+        }
     }
 }
 
 @Composable
-fun HomeTab(vm: MusicViewModel, p: PaddingValues, onArt: (String, String) -> Unit) {
+fun HomeView(vm: MusicViewModel, p: PaddingValues, onArtist: (String, String) -> Unit) {
     val rec by vm.recTracks.collectAsState()
     val new by vm.newTracks.collectAsState()
     LazyColumn(Modifier.padding(p).fillMaxSize()) {
         item { Text("Здравствуйте, Metadon!", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp), color = Color.White) }
-        item { Text("Рекомендации", color = Color.Gray, fontSize = 18.sp, modifier = Modifier.padding(16.dp)) }
-        items(rec) { TrackRow(it, onArt) { vm.play(it) } }
-        item { Text("Новинки", color = Color.Gray, fontSize = 18.sp, modifier = Modifier.padding(16.dp)) }
-        items(new) { TrackRow(it, onArt) { vm.play(it) } }
+        item { Text("Рекомендации", color = Color.Gray, modifier = Modifier.padding(16.dp)) }
+        items(rec) { TrackRowUI(it, onArtist) { vm.startPlayback(it) } }
+        item { Text("Новинки", color = Color.Gray, modifier = Modifier.padding(16.dp)) }
+        items(new) { TrackRowUI(it, onArtist) { vm.startPlayback(it) } }
     }
 }
 
 @Composable
-fun ArtistTab(name: String, vm: MusicViewModel, p: PaddingValues) {
+fun ArtistView(name: String, vm: MusicViewModel, p: PaddingValues) {
     val tracks by vm.artistTracks.collectAsState()
     LazyColumn(Modifier.padding(p).fillMaxSize()) {
         item { Text(name, color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
-        items(tracks) { TrackRow(it, { _, _ -> }) { vm.play(it) } }
+        items(tracks) { TrackRowUI(it, {_,_ ->}) { vm.startPlayback(it) } }
     }
 }
 
 @Composable
-fun TrackRow(t: Track, onArt: (String, String) -> Unit, onClick: () -> Unit) {
+fun TrackRowUI(t: Track, onArtist: (String, String) -> Unit, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
         AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(4.dp)), contentScale = ContentScale.Crop)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(t.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(t.artist, color = Color.Gray, modifier = Modifier.clickable { if(t.artistId.isNotEmpty()) onArt(t.artistId, t.artist) })
+            Text(t.artist, color = Color.Gray, modifier = Modifier.clickable { if(t.artistId.isNotEmpty()) onArtist(t.artistId, t.artist) })
         }
+        Icon(Icons.Default.MoreVert, null, tint = Color.White)
     }
 }
 
 @Composable
-fun MiniPlayer(t: Track, vm: MusicViewModel) {
-    val isPlaying by vm.isPlaying.collectAsState()
-    Surface(Modifier.fillMaxWidth().height(64.dp).clickable { vm.isPlayerFull.value = true }, color = Color(0xFF1A1A1A)) {
+fun SmallPlayerUI(t: Track, vm: MusicViewModel) {
+    Surface(Modifier.fillMaxWidth().height(64.dp).clickable { vm.isPlayerActive.value = true }, color = Color(0xFF1A1A1A)) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(4.dp)))
             Spacer(Modifier.width(12.dp))
             Text(t.title, color = Color.White, modifier = Modifier.weight(1f), maxLines = 1)
-            IconButton(onClick = { if (isPlaying) vm.exoPlayer?.pause() else vm.exoPlayer?.play() }) {
-                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.White)
+            IconButton(onClick = { if (vm.isMusicPlaying.value) vm.player?.pause() else vm.player?.play() }) {
+                Icon(if (vm.isMusicPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.White)
             }
         }
     }
 }
 
 @Composable
-fun FullPlayer(vm: MusicViewModel) {
-    val t by vm.currentTrack.collectAsState()
+fun BigPlayerUI(vm: MusicViewModel) {
+    val t = vm.currentTrack.collectAsState().value ?: return
     val lyr by vm.lyricsText.collectAsState()
-    val isPlaying by vm.isPlaying.collectAsState()
-    val pos by vm.currentPos.collectAsState()
-    val dur by vm.duration.collectAsState()
-
-    if (t == null) return
 
     Box(Modifier.fillMaxSize().background(Color.Black).padding(24.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            IconButton(onClick = { vm.isPlayerFull.value = false }, Modifier.align(Alignment.Start)) {
+            IconButton(onClick = { vm.isPlayerActive.value = false }, Modifier.align(Alignment.Start)) {
                 Icon(Icons.Default.KeyboardArrowDown, null, tint = Color.White, modifier = Modifier.size(36.dp))
             }
             Spacer(Modifier.height(20.dp))
-            AsyncImage(model = t!!.cover, contentDescription = null, modifier = Modifier.size(320.dp).clip(RoundedCornerShape(12.dp)))
+            AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(320.dp).clip(RoundedCornerShape(12.dp)))
             Spacer(Modifier.height(24.dp))
-            Text(t!!.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(t!!.artist, color = Color.Gray, fontSize = 18.sp)
+            Text(t.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(t.artist, color = Color.Gray, fontSize = 18.sp)
             
+            Spacer(Modifier.height(24.dp))
+            
+            // Слайдер перемотки
             Slider(
-                value = pos.toFloat(), 
-                valueRange = 0f..dur.toFloat().coerceAtLeast(1f), 
-                onValueChange = { vm.exoPlayer?.seekTo(it.toLong()) },
+                value = vm.playbackPosition.value.toFloat(), 
+                valueRange = 0f..vm.trackDurationTime.value.toFloat().coerceAtLeast(1f), 
+                onValueChange = { vm.player?.seekTo(it.toLong()) },
                 colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White)
             )
+            
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                Text(vm.formatTime(pos), color = Color.Gray)
-                Text(vm.formatTime(dur), color = Color.Gray)
+                Text(vm.getTimeString(vm.playbackPosition.value), color = Color.Gray)
+                Text(vm.getTimeString(vm.trackDurationTime.value), color = Color.Gray)
             }
             
+            Spacer(Modifier.height(24.dp))
+            
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly, Alignment.CenterVertically) {
-                Icon(Icons.Default.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.exoPlayer?.seekToPrevious() })
-                Surface(Modifier.size(72.dp).clickable { if (isPlaying) vm.exoPlayer?.pause() else vm.exoPlayer?.play() }, shape = CircleShape, color = Color.White) {
-                    Box(contentAlignment = Alignment.Center) { Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(40.dp)) }
+                Icon(Icons.Default.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.player?.seekToPrevious() })
+                Surface(Modifier.size(72.dp).clickable { if (vm.isMusicPlaying.value) vm.player?.pause() else vm.player?.play() }, shape = CircleShape, color = Color.White) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(if (vm.isMusicPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(40.dp))
+                    }
                 }
-                Icon(Icons.Default.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.exoPlayer?.seekToNext() })
+                Icon(Icons.Default.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.player?.seekToNext() })
             }
             
             Spacer(Modifier.height(32.dp))
@@ -273,6 +285,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!Python.isStarted()) Python.start(AndroidPlatform(this))
-        setContent { MaterialTheme { MainActivityContent() } }
+        setContent { MaterialTheme { MainAppContent() } }
     }
 }
