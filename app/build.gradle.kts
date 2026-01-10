@@ -1,9 +1,7 @@
-import com.chaquo.python.android.PythonExtension
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.chaquo.python") 
+    id("com.chaquo.python")
 }
 
 android {
@@ -23,8 +21,8 @@ android {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
 
-        // БОЛЕЕ СТРОГИЙ СИНТАКСИС ДЛЯ PYTHON
-        configure<PythonExtension> {
+        // Используем полную ссылку на класс без import, чтобы избежать ошибки компиляции скрипта
+        extensions.configure<com.chaquo.python.android.PythonExtension>("python") {
             version = "3.10"
             pip {
                 install("ytmusicapi")
