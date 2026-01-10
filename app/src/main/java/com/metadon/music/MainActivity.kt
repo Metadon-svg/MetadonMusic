@@ -13,17 +13,21 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
+            // Темная тема как в YT Music
             MaterialTheme(colorScheme = darkColorScheme()) {
-                Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
-                    MainScreen()
-                }
+                MainScreen()
             }
         }
     }
@@ -31,62 +35,106 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainScreen() {
-    val status = remember { AudioEngine.getEngineStatus() }
-    
     Scaffold(
+        containerColor = Color.Black,
         bottomBar = { BottomNav() }
-    ) { p ->
-        Column(modifier = Modifier.padding(p).verticalScroll(rememberScrollState())) {
-            Header()
-            Text(status, color = Color.Green, modifier = Modifier.padding(16.dp))
-            Categories()
-            RecommendationList()
-        }
-        Box(contentAlignment = Alignment.BottomCenter, modifier = Modifier.fillMaxSize()) {
-            MiniPlayer()
+    ) { padding ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Основной контент
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                TopBar()
+                CategoryChips()
+                
+                Text(
+                    "Здравствуйте, Metadon!",
+                    color = Color.White,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(16.dp)
+                )
+
+                RecommendationsSection()
+                Spacer(Modifier.height(100.dp)) // Чтобы плеер не перекрывал контент
+            }
+
+            // Плавающий мини-плеер
+            Box(Modifier.align(Alignment.BottomCenter)) {
+                MiniPlayer()
+            }
         }
     }
 }
 
 @Composable
-fun Header() {
-    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text("Music", style = MaterialTheme.typography.headlineMedium, color = Color.White)
+fun TopBar() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.PlayCircleFilled, "Logo", tint = Color.Red, modifier = Modifier.size(32.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Music", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        }
         Row {
+            Icon(Icons.Default.Cast, null, tint = Color.White)
+            Spacer(Modifier.width(20.dp))
+            Icon(Icons.Default.Notifications, null, tint = Color.White)
+            Spacer(Modifier.width(20.dp))
             Icon(Icons.Default.Search, null, tint = Color.White)
-            Spacer(Modifier.width(16.dp))
-            Box(Modifier.size(32.dp).background(Color.Gray, RoundedCornerShape(16.dp)))
+            Spacer(Modifier.width(20.dp))
+            Box(Modifier.size(28.dp).background(Color.Cyan, RoundedCornerShape(14.dp)))
         }
     }
 }
 
 @Composable
-fun Categories() {
-    val chips = listOf("Релакс", "Вечеринка", "Заряд энергии", "Веселая")
-    LazyRow(contentPadding = PaddingValues(16.dp)) {
+fun CategoryChips() {
+    val chips = listOf("Релакс", "Вечеринка", "Заряд энергии", "Веселая", "Романтика")
+    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp)) {
         items(chips) { chip ->
-            AssistChip(
-                onClick = {},
-                label = { Text(chip) },
+            Surface(
                 modifier = Modifier.padding(end = 8.dp),
-                colors = AssistChipDefaults.assistChipColors(containerColor = Color.DarkGray, labelColor = Color.White)
-            )
+                shape = RoundedCornerShape(8.dp),
+                color = Color.DarkGray.copy(alpha = 0.5f)
+            ) {
+                Text(chip, color = Color.White, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+            }
         }
     }
 }
 
 @Composable
-fun RecommendationList() {
-    val tracks = listOf("Женщина, я не танцую", "18 мне уже", "это путин виноват")
+fun RecommendationsSection() {
+    val tracks = listOf(
+        TrackData("Женщина, я не танцую", "Костюшкин Стас", "https://i.ytimg.com/vi/placeholder1.jpg"),
+        TrackData("18 мне уже", "Руки Вверх!", "https://i.ytimg.com/vi/placeholder2.jpg"),
+        TrackData("это путин виноват", "mvlancore", "https://i.ytimg.com/vi/placeholder3.jpg"),
+        TrackData("КАЖДЫЙ ДЕНЬ", "Nomad Punk", "https://i.ytimg.com/vi/placeholder4.jpg")
+    )
+
     Column(Modifier.padding(16.dp)) {
-        Text("Рекомендации", style = MaterialTheme.typography.titleLarge, color = Color.White)
-        tracks.forEach { title ->
-            Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(50.dp).background(Color.DarkGray).clip(RoundedCornerShape(4.dp)))
+        tracks.forEach { track ->
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AsyncImage(
+                    model = track.cover,
+                    contentDescription = null,
+                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(4.dp)).background(Color.DarkGray),
+                    contentScale = ContentScale.Crop
+                )
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(title, color = Color.White)
-                    Text("Исполнитель", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                    Text(track.title, color = Color.White, fontWeight = FontWeight.Medium)
+                    Text(track.artist, color = Color.Gray, fontSize = 14.sp)
                 }
                 Icon(Icons.Default.MoreVert, null, tint = Color.White)
             }
@@ -96,23 +144,36 @@ fun RecommendationList() {
 
 @Composable
 fun MiniPlayer() {
-    Card(
+    Surface(
         modifier = Modifier.fillMaxWidth().padding(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF222222))
+        color = Color(0xFF212121),
+        shape = RoundedCornerShape(8.dp)
     ) {
-        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(40.dp).background(Color.Gray))
+        Row(
+            modifier = Modifier.padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(40.dp).background(Color.Gray, RoundedCornerShape(4.dp)))
             Spacer(Modifier.width(12.dp))
-            Text("Текущий трек...", color = Color.White, modifier = Modifier.weight(1f))
-            Icon(Icons.Default.PlayArrow, null, tint = Color.White)
+            Column(Modifier.weight(1f)) {
+                Text("Женщина, я не танцую", color = Color.White, fontSize = 14.sp, maxLines = 1)
+                Text("Костюшкин Стас", color = Color.Gray, fontSize = 12.sp)
+            }
+            Icon(Icons.Default.Cast, null, tint = Color.White, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(16.dp))
+            Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(32.dp))
         }
     }
 }
 
 @Composable
 fun BottomNav() {
-    NavigationBar(containerColor = Color.Black) {
+    NavigationBar(containerColor = Color(0xFF0F0F0F)) {
         NavigationBarItem(selected = true, onClick = {}, icon = { Icon(Icons.Default.Home, null) }, label = { Text("Главная") })
-        NavigationBarItem(selected = false, onClick = {}, icon = { Icon(Icons.Default.Favorite, null) }, label = { Text("Библиотека") })
+        NavigationBarItem(selected = false, onClick = {}, icon = { Icon(Icons.Default.PlayArrow, null) }, label = { Text("Сэмплы") })
+        NavigationBarItem(selected = false, onClick = {}, icon = { Icon(Icons.Default.Explore, null) }, label = { Text("Навигатор") })
+        NavigationBarItem(selected = false, onClick = {}, icon = { Icon(Icons.Default.LibraryMusic, null) }, label = { Text("Библиотека") })
     }
 }
+
+data class TrackData(val title: String, val artist: String, val cover: String)
