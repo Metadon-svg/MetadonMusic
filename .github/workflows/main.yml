@@ -17,18 +17,17 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # Мы не используем сторонние экшены, просто создаем wrapper
+      # Генерируем Gradle Wrapper (так как у тебя нет jar файла)
       - name: Generate Wrapper
         run: gradle wrapper --gradle-version 8.2.2
 
       - name: Build with Gradle
         run: |
           chmod +x gradlew
-          # Мы добавим флаг, чтобы Gradle сам принял лицензии NDK если нужно
           ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicApp
+          name: MusicApp-Debug
           path: app/build/outputs/apk/debug/*.apk
