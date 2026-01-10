@@ -1,0 +1,37 @@
+name: Build Music App
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android NDK
+        uses: n0rtzh/setup-android-ndk@v1
+        with:
+          ndk-version: r25c
+
+      - name: Generate Wrapper
+        run: gradle wrapper --gradle-version 8.2.2
+
+      - name: Build with Gradle
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicApp
+          path: app/build/outputs/apk/debug/*.apk
