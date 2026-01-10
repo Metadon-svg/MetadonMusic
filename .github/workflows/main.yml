@@ -20,11 +20,11 @@ jobs:
           gradle-version: 8.5
 
       - name: Build APK
-        # Выделяем память для Chaquopy и запускаем сборку
-        run: gradle :app:assembleDebug --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
+        # Флаг -Xmx4g даст Gradle больше сил для установки Python
+        run: gradle :app:assembleDebug --no-daemon -Dorg.gradle.jvmargs="-Xmx4g"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MusicApp-YT-Python
+          name: MusicApp
           path: app/build/outputs/apk/debug/*.apk
