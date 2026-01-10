@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.metadon.music">
 
+    <!-- Разрешения -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
@@ -8,22 +10,26 @@
 
     <application
         android:allowBackup="true"
-        android:label="YT Music Clone"
+        android:icon="@mipmap/ic_launcher"
+        android:label="Metadon Music"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
-        
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@android:style/Theme.Material.NoActionBar">
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- Сервис для фоновой музыки -->
+        <!-- Сервис для того, чтобы музыка не вылетала в фоне -->
         <service
-            android:name=".PlaybackService"
+            android:name="androidx.media3.session.MediaSessionService"
+            android:enabled="true"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
