@@ -24,18 +24,16 @@ import androidx.compose.ui.unit.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import com.chaquo.python.Python
+import com.chaquo.python.PyObject
 import com.chaquo.python.android.AndroidPlatform
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 
-// Модель данных
 data class Track(val id: String, val title: String, val artist: String, val artistId: String, val cover: String)
 
-// ViewModel - ЗДЕСЬ ВСЯ ЛОГИКА ПЕРЕМОТКИ
 class MusicViewModel : ViewModel() {
     val uiState = MutableStateFlow<List<Track>>(emptyList())
     val artistState = MutableStateFlow<List<Track>>(emptyList())
@@ -43,28 +41,13 @@ class MusicViewModel : ViewModel() {
     val isPlayerFullScreen = mutableStateOf(false)
     val isPlaying = mutableStateOf(false)
     
-    // Переменные для времени и перемотки
     var currentPos = mutableLongStateOf(0L)
     var duration = mutableLongStateOf(0L)
-    
     var exoPlayer: ExoPlayer? = null
 
     fun initPlayer(context: android.content.Context) {
         if (exoPlayer == null) {
-            exoPlayer = ExoPlayer.Builder(context).build().apply {
-                addListener(object : Player.Listener {
-                    override fun onIsPlayingChanged(playing: Boolean) {
-                        isPlaying.value = playing
-                    }
-                    override fun onPlaybackStateChanged(state: Int) {
-                        if (state == Player.STATE_READY) {
-                            duration.longValue = duration.coerceAtLeast(0L)
-                        }
-                    }
-                })
-            }
-
-            // ТАЙМЕР ОБНОВЛЕНИЯ ВРЕМЕНИ (Перемотка)
+            exoPlayer = ExoPlayer.Builder(context).build()
             CoroutineScope(Dispatchers.Main).launch {
                 while (true) {
                     exoPlayer?.let {
@@ -91,25 +74,44 @@ class MusicViewModel : ViewModel() {
     }
 
     fun search(query: String) = CoroutineScope(Dispatchers.IO).launch {
-        val py = Python.getInstance().getModule("yt_logic")
-        val res = py.callAttr("search_music", query).asList()
-        uiState.value = res.map {
-            val m = it.asMap()
-            Track(m["id"].toString(), m["title"].toString(), m["artist"].toString(), m["artistId"].toString(), m["cover"].toString())
-        }
+        try {
+            val py = Python.getInstance().getModule("yt_logic")
+            val res = py.callAttr("search_music", query).asList()
+            val tracks = res.map { item ->
+                // ИСПРАВЛЕНО: Достаем каждое поле отдельно через PyObject
+                val p = item as PyObject
+                Track(
+                    p.get("id").toString(),
+                    p.get("title").toString(),
+                    p.get("artist").toString(),
+                    p.get("artistId").toString(),
+                    p.get("cover").toString()
+                )
+            }
+            uiState.value = tracks
+        } catch (e: Exception) { e.printStackTrace() }
     }
 
     fun loadArtist(id: String) = CoroutineScope(Dispatchers.IO).launch {
-        val py = Python.getInstance().getModule("yt_logic")
-        val res = py.callAttr("get_artist_songs", id).asList()
-        artistState.value = res.map {
-            val m = it.asMap()
-            Track(m["id"].toString(), m["title"].toString(), m["artist"].toString(), "", m["cover"].toString())
-        }
+        try {
+            val py = Python.getInstance().getModule("yt_logic")
+            val res = py.callAttr("get_artist_songs", id).asList()
+            artistState.value = res.map { item ->
+                val p = item as PyObject
+                Track(
+                    p.get("id").toString(),
+                    p.get("title").toString(),
+                    p.get("artist").toString(),
+                    "",
+                    p.get("cover").toString()
+                )
+            }
+        } catch (e: Exception) { e.printStackTrace() }
     }
 
     fun play(track: Track) {
         currentTrack.value = track
+        isPlaying.value = true
         CoroutineScope(Dispatchers.IO).launch {
             val py = Python.getInstance().getModule("yt_logic")
             val url = py.callAttr("get_stream_url", track.id).toString()
@@ -181,7 +183,7 @@ fun MainNavigation(vm: MusicViewModel) {
 @Composable
 fun HomeTab(vm: MusicViewModel, onArtist: (String, String) -> Unit) {
     val tracks by vm.uiState.collectAsState()
-    LazyColumn {
+    LazyColumn(Modifier.fillMaxSize()) {
         item { Text("Здравствуйте, Metadon!", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp), color = Color.White) }
         items(tracks) { TrackItem(it, onArtist) { vm.play(it) } }
     }
@@ -190,7 +192,7 @@ fun HomeTab(vm: MusicViewModel, onArtist: (String, String) -> Unit) {
 @Composable
 fun ArtistScreen(name: String, vm: MusicViewModel) {
     val tracks by vm.artistState.collectAsState()
-    Column {
+    Column(Modifier.fillMaxSize()) {
         Text(name, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp), color = Color.White)
         LazyColumn { items(tracks) { TrackItem(it, {_,_ ->}) { vm.play(it) } } }
     }
@@ -242,15 +244,7 @@ fun FullPlayer(vm: MusicViewModel) {
             Text(track.artist, color = Color.Gray, fontSize = 18.sp, modifier = Modifier.align(Alignment.Start))
             
             Spacer(Modifier.height(32.dp))
-
-            // РАБОЧАЯ ПЕРЕМОТКА (Slider)
-            Slider(
-                value = pos.toFloat(),
-                valueRange = 0f..dur.toFloat().coerceAtLeast(1f),
-                onValueChange = { vm.seekTo(it) },
-                colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White)
-            )
-            
+            Slider(value = pos.toFloat(), valueRange = 0f..dur.toFloat().coerceAtLeast(1f), onValueChange = { vm.seekTo(it) }, colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(vm.formatTime(pos), color = Color.Gray, fontSize = 12.sp)
                 Text(vm.formatTime(dur), color = Color.Gray, fontSize = 12.sp)
@@ -260,13 +254,9 @@ fun FullPlayer(vm: MusicViewModel) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Shuffle, null, tint = Color.Gray)
                 Icon(Icons.Default.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(40.dp))
-                
-                Surface(shape = CircleShape, color = Color.White, modifier = Modifier.size(72.dp).clickable {
-                    if (vm.isPlaying.value) vm.exoPlayer?.pause() else vm.exoPlayer?.play()
-                }) {
+                Surface(shape = CircleShape, color = Color.White, modifier = Modifier.size(72.dp).clickable { if (vm.isPlaying.value) vm.exoPlayer?.pause() else vm.exoPlayer?.play() }) {
                     Icon(if (vm.isPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(48.dp).padding(16.dp))
                 }
-
                 Icon(Icons.Default.SkipNext, null, tint = Color.White, modifier = Modifier.size(40.dp))
                 Icon(Icons.Default.Repeat, null, tint = Color.Gray)
             }
