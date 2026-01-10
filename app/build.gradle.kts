@@ -8,6 +8,7 @@ android {
     namespace = "com.metadon.music"
     compileSdk = 34
 
+    // Стабильная версия NDK для GitHub Actions
     ndkVersion = "25.1.8937393"
 
     defaultConfig {
@@ -17,17 +18,9 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        // Настройка архитектур (чтобы уменьшить вес и избежать ошибок)
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
-        }
-
-        // Используем полную ссылку на класс без import, чтобы избежать ошибки компиляции скрипта
-        extensions.configure<com.chaquo.python.android.PythonExtension>("python") {
-            version = "3.10"
-            pip {
-                install("ytmusicapi")
-                install("yt-dlp")
-            }
         }
     }
 
@@ -49,16 +42,29 @@ android {
     }
 }
 
+// НАСТРОЙКА PYTHON (ВЫНЕСЕНА ИЗ БЛОКА ANDROID ДЛЯ НАДЕЖНОСТИ)
+python {
+    version = "3.10"
+    pip {
+        install("ytmusicapi")
+        install("yt-dlp")
+    }
+}
+
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     
+    // Compose
     implementation("androidx.compose.ui:ui:1.5.4")
     implementation("androidx.compose.material3:material3:1.1.2")
     implementation("androidx.compose.material:material-icons-extended:1.5.4")
     
+    // Media3 (Звук)
     implementation("androidx.media3:media3-exoplayer:1.2.0")
     implementation("androidx.media3:media3-session:1.2.0")
+    
+    // Coil (Обложки)
     implementation("io.coil-kt:coil-compose:2.5.0")
 }
