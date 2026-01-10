@@ -1,4 +1,3 @@
-// КОРНЕВОЙ build.gradle (Groovy)
 buildscript {
     repositories {
         google()
@@ -12,12 +11,7 @@ buildscript {
     }
 }
 
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
+// Удаляем блок allprojects, так как репозитории уже есть в settings.gradle
 
 task clean(type: Delete) {
     delete rootProject.buildDir
