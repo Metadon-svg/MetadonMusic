@@ -1,70 +1,41 @@
 from ytmusicapi import YTMusic
 import yt_dlp
 
+# Инициализация с таймаутом
 yt = YTMusic()
-
-def get_best_thumb(thumbnails):
-    if not thumbnails: return "https://images.unsplash.com/photo-1614680376593-902f74cf0d41?w=300"
-    return thumbnails[-1]['url']
-
-def search_music(query):
-    try:
-        results = yt.search(query, filter="songs", limit=20)
-        return [{
-            "id": str(r['videoId']),
-            "title": str(r['title']),
-            "artist": str(r['artists'][0]['name']),
-            "artistId": str(r['artists'][0]['id']),
-            "cover": get_best_thumb(r.get('thumbnails', [])),
-            "duration": int(r.get('duration_seconds', 0))
-        } for r in results]
-    except: return []
 
 def get_home_data():
     try:
-        # Имитация твоего INIT_HOME: берем хиты и новинки
-        rec = yt.search("Top Hits 2025 Global", filter="songs", limit=12)
-        new = yt.search("New Music Releases", filter="songs", limit=12)
+        # Ищем через поиск, так как get_home() требует авторизации
+        rec = yt.search("Trending Songs Global", filter="songs", limit=10)
+        new = yt.search("New Hits 2025", filter="songs", limit=10)
         
-        def transform(data):
-            return [{
-                "id": str(r['videoId']),
-                "title": str(r['title']),
-                "artist": str(r['artists'][0]['name']),
-                "artistId": str(r['artists'][0]['id']),
-                "cover": get_best_thumb(r.get('thumbnails', []))
-            } for r in data]
-            
-        return {"rec": transform(rec), "new": transform(new)}
-    except: return {"rec": [], "new": []}
+        def parse(items):
+            return [{"id": str(i['videoId']), "title": str(i['title']), "artist": str(i['artists'][0]['name']), 
+                     "artistId": str(i['artists'][0]['id']), "cover": str(i['thumbnails'][-1]['url'])} for i in items if 'videoId' in i]
+        
+        return {"rec": parse(rec), "new": parse(new)}
+    except Exception as e:
+        return {"rec": [], "new": []}
+
+def search_music(query):
+    try:
+        res = yt.search(query, filter="songs", limit=20)
+        return [{"id": str(i['videoId']), "title": str(i['title']), "artist": str(i['artists'][0]['name']), 
+                 "artistId": str(i['artists'][0]['id']), "cover": str(i['thumbnails'][-1]['url'])} for i in res if 'videoId' in i]
+    except: return []
 
 def get_artist_songs(artist_id):
     try:
-        artist_data = yt.get_artist(artist_id)
-        # Берем раздел с песнями
-        songs = artist_data['songs']['results']
-        return [{
-            "id": str(r['videoId']),
-            "title": str(r['title']),
-            "artist": str(artist_data['name']),
-            "artistId": str(artist_id),
-            "cover": get_best_thumb(r.get('thumbnails', []))
-        } for r in songs]
+        artist = yt.get_artist(artist_id)
+        songs = artist['songs']['results']
+        return [{"id": str(i['videoId']), "title": str(i['title']), "artist": str(artist['name']), 
+                 "artistId": str(artist_id), "cover": str(i['thumbnails'][-1]['url'])} for i in songs]
     except: return []
 
 def get_stream_url(video_id):
     try:
         ydl_opts = {'format': 'bestaudio/best', 'quiet': True, 'noplaylist': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-            return str(info['url'])
+            return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)['url']
     except: return ""
-
-def get_lyrics(video_id):
-    try:
-        watch = yt.get_watch_playlist(videoId=video_id)
-        if 'lyrics' not in watch: return "Текст песни не найден"
-        lyrics_id = watch['lyrics']
-        lyrics_res = yt.get_lyrics(browseId=lyrics_id)
-        return str(lyrics_res['lyrics'])
-    except: return "Не удалось загрузить текст"
