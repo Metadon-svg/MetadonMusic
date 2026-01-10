@@ -2,7 +2,7 @@ pluginManagement {
     repositories {
         google()
         mavenCentral()
-        gradlePluginPortal()
+        gradlePluginPortal() // Обязательно для Chaquopy
     }
 }
 dependencyResolutionManagement {
