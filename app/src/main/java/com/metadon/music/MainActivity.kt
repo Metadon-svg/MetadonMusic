@@ -1,7 +1,6 @@
 package com.metadon.music
 
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -19,6 +18,7 @@ import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned // ДОБАВЛЕН ИМПОРТ
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
@@ -43,11 +43,13 @@ class MusicViewModel : ViewModel() {
     val artistTracks = MutableStateFlow<List<Track>>(emptyList())
     
     val currentTrack = MutableStateFlow<Track?>(null)
-    val isSearching = mutableStateOf(false)
-    val isPlayerFull = mutableStateOf(false)
-    val isPlaying = mutableStateOf(false)
-    val currentPos = mutableLongStateOf(0L)
-    val duration = mutableLongStateOf(0L)
+    
+    // Используем обычные MutableState для UI
+    var isSearching = mutableStateOf(false)
+    var isPlayerFull = mutableStateOf(false)
+    var isMusicPlaying = mutableStateOf(false)
+    var currentPos = mutableStateOf(0L)
+    var totalDuration = mutableStateOf(0L)
     
     var player: ExoPlayer? = null
 
@@ -55,9 +57,9 @@ class MusicViewModel : ViewModel() {
         if (player == null) {
             player = ExoPlayer.Builder(ctx).build().apply {
                 addListener(object : Player.Listener {
-                    override fun onIsPlayingChanged(p: Boolean) { isPlaying.value = p }
+                    override fun onIsPlayingChanged(p: Boolean) { isMusicPlaying.value = p }
                     override fun onPlaybackStateChanged(state: Int) {
-                        if (state == Player.STATE_READY) duration.value = duration.coerceAtLeast(0)
+                        if (state == Player.STATE_READY) totalDuration.value = duration.coerceAtLeast(0)
                     }
                 })
             }
@@ -135,7 +137,8 @@ fun MainApp() {
         bottomBar = {
             if (!vm.isPlayerFull.value) {
                 Column {
-                    vm.currentTrack.collectAsState().value?.let { MiniPlayerUI(it, vm) }
+                    val cur by vm.currentTrack.collectAsState()
+                    cur?.let { MiniPlayerUI(it, vm) }
                     NavigationBar(containerColor = Color.Black) {
                         NavigationBarItem(selected = tab=="home", onClick={tab="home"; searchActive=false}, icon={Icon(Icons.Default.Home,null)}, label={Text("Главная")})
                         NavigationBarItem(selected = tab=="nav", onClick={tab="nav"}, icon={Icon(Icons.Default.Explore,null)}, label={Text("Навигатор")})
@@ -150,11 +153,7 @@ fun MainApp() {
                 "home" -> {
                     Column {
                         SearchBarUI(searchText, { searchText = it; vm.startSearch(it) }, { searchActive = true })
-                        if (searchActive) {
-                            SearchList(vm)
-                        } else {
-                            HomeList(vm) { id, name -> artistName = name; vm.loadArtist(id); tab = "artist" }
-                        }
+                        if (searchActive) SearchList(vm) else HomeList(vm) { id, name -> artistName = name; vm.loadArtist(id); tab = "artist" }
                     }
                 }
                 "artist" -> ArtistList(artistName, vm)
@@ -168,16 +167,19 @@ fun MainApp() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchBarUI(text: String, onValueChange: (String) -> Unit, onFocus: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        TextField(
-            value = text, onValueChange = onValueChange,
-            modifier = Modifier.weight(1f).onGloballyPositioned { onFocus() },
-            placeholder = { Text("Поиск музыки...") },
-            leadingIcon = { Icon(Icons.Default.Search, null) },
-            shape = RoundedCornerShape(12.dp),
-            colors = TextFieldDefaults.textFieldColors(containerColor = Color(0xFF1A1A1A), textColor = Color.White)
+    TextField(
+        value = text, onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth().padding(16.dp).onGloballyPositioned { onFocus() },
+        placeholder = { Text("Поиск музыки...") },
+        leadingIcon = { Icon(Icons.Default.Search, null) },
+        shape = RoundedCornerShape(12.dp),
+        colors = TextFieldDefaults.colors( // ИСПРАВЛЕНО ДЛЯ MATERIAL 3
+            focusedContainerColor = Color(0xFF1A1A1A),
+            unfocusedContainerColor = Color(0xFF1A1A1A),
+            focusedTextColor = Color.White,
+            unfocusedTextColor = Color.White
         )
-    }
+    )
 }
 
 @Composable
@@ -186,9 +188,7 @@ fun HomeList(vm: MusicViewModel, onArt: (String, String) -> Unit) {
     val new by vm.newTracks.collectAsState()
     LazyColumn {
         item { Text("Рекомендации", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
-        if (rec.isEmpty()) item { CircularProgressIndicator(Modifier.padding(16.dp), color = Color.Red) }
         items(rec) { TrackRow(it, onArt) { vm.play(it) } }
-        
         item { Text("Новинки", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
         items(new) { TrackRow(it, onArt) { vm.play(it) } }
     }
@@ -198,9 +198,7 @@ fun HomeList(vm: MusicViewModel, onArt: (String, String) -> Unit) {
 fun SearchList(vm: MusicViewModel) {
     val res by vm.searchResults.collectAsState()
     if (vm.isSearching.value) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Color.Red)
-    LazyColumn {
-        items(res) { TrackRow(it, {_,_ ->}) { vm.play(it) } }
-    }
+    LazyColumn { items(res) { TrackRow(it, {_,_ ->}) { vm.play(it) } } }
 }
 
 @Composable
@@ -215,7 +213,7 @@ fun ArtistList(name: String, vm: MusicViewModel) {
 @Composable
 fun TrackRow(t: Track, onArt: (String, String) -> Unit, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(4.dp)))
+        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(4.dp)), contentScale = ContentScale.Crop)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(t.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -231,8 +229,8 @@ fun MiniPlayerUI(t: Track, vm: MusicViewModel) {
             AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(4.dp)))
             Spacer(Modifier.width(12.dp))
             Text(t.title, color = Color.White, modifier = Modifier.weight(1f), maxLines = 1)
-            IconButton(onClick = { if (vm.isPlaying.value) vm.player?.pause() else vm.player?.play() }) {
-                Icon(if (vm.isPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.White)
+            IconButton(onClick = { if (vm.isMusicPlaying.value) vm.player?.pause() else vm.player?.play() }) {
+                Icon(if (vm.isMusicPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.White)
             }
         }
     }
@@ -249,11 +247,11 @@ fun FullPlayerUI(vm: MusicViewModel) {
             Spacer(Modifier.height(20.dp)); AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(320.dp).clip(RoundedCornerShape(12.dp)))
             Spacer(Modifier.height(24.dp)); Text(t.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold); Text(t.artist, color = Color.Gray, fontSize = 18.sp)
             Spacer(Modifier.height(24.dp))
-            Slider(value = vm.currentPos.value.toFloat(), valueRange = 0f..vm.duration.value.toFloat().coerceAtLeast(1f), onValueChange = { vm.player?.seekTo(it.toLong()) }, colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White))
+            Slider(value = vm.currentPos.value.toFloat(), valueRange = 0f..vm.totalDuration.value.toFloat().coerceAtLeast(1f), onValueChange = { vm.player?.seekTo(it.toLong()) }, colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White))
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly) {
                 Icon(Icons.Default.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.player?.seekToPrevious() })
-                Surface(Modifier.size(72.dp).clickable { if (vm.isPlaying.value) vm.player?.pause() else vm.player?.play() }, shape = CircleShape, color = Color.White) {
-                    Box(contentAlignment = Alignment.Center) { Icon(if (vm.isPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(40.dp)) }
+                Surface(Modifier.size(72.dp).clickable { if (vm.isMusicPlaying.value) vm.player?.pause() else vm.player?.play() }, shape = CircleShape, color = Color.White) {
+                    Box(contentAlignment = Alignment.Center) { Icon(if (vm.isMusicPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(40.dp)) }
                 }
                 Icon(Icons.Default.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.player?.seekToNext() })
             }
