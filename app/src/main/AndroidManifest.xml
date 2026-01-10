@@ -2,7 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.metadon.music">
 
-    <!-- Разрешения -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
@@ -10,10 +9,7 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
         android:label="Metadon Music"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
 
         <activity
@@ -26,7 +22,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Сервис для того, чтобы музыка не вылетала в фоне -->
         <service
             android:name="androidx.media3.session.MediaSessionService"
             android:enabled="true"
