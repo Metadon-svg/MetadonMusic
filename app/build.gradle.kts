@@ -6,8 +6,8 @@ plugins {
 android {
     namespace = "com.metadon.music"
     compileSdk = 34
-    
-    // Используем стандартную версию NDK для GitHub Actions
+
+    // Стандартная версия NDK для GitHub Actions
     ndkVersion = "25.1.8937393"
 
     defaultConfig {
@@ -56,16 +56,21 @@ android {
 }
 
 dependencies {
+    // Основные зависимости
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     
     // Compose
-    implementation(platform("androidx.compose:compose-bom:2023.10.01"))
+    val composeBom = platform("androidx.compose:compose-bom:2023.10.01")
+    implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3:1.1.2")
     
-    // Media3
+    // Media3 для звука
     implementation("androidx.media3:media3-exoplayer:1.2.0")
     implementation("androidx.media3:media3-session:1.2.0")
+    
+    // Coil для картинок
+    implementation("io.coil-kt:coil-compose:2.5.0")
 }
