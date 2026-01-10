@@ -33,6 +33,7 @@ import com.chaquo.python.android.AndroidPlatform
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 
+// Модель данных
 data class Track(val id: String, val title: String, val artist: String, val artistId: String, val cover: String)
 
 class MusicViewModel : ViewModel() {
@@ -56,7 +57,6 @@ class MusicViewModel : ViewModel() {
                 })
             }
             loadHome()
-            // Таймер для прогресса
             CoroutineScope(Dispatchers.Main).launch {
                 while(true) {
                     exoPlayer?.let { 
@@ -74,16 +74,22 @@ class MusicViewModel : ViewModel() {
     private fun loadHome() = CoroutineScope(Dispatchers.IO).launch {
         try {
             val py = Python.getInstance().getModule("yt_logic")
-            val data = py.callAttr("get_home_data").asMap()
-            recTracks.value = mapPyList(data["rec"])
-            newTracks.value = mapPyList(data["new"])
+            val homeData = py.callAttr("get_home_data")
+            
+            // Достаем списки напрямую через get(), чтобы избежать ошибки Type Inference K
+            val recObj = homeData.get("rec")
+            val newObj = homeData.get("new")
+            
+            recTracks.value = mapPyList(recObj)
+            newTracks.value = mapPyList(newObj)
         } catch (e: Exception) { e.printStackTrace() }
     }
 
     fun loadArtist(id: String) = CoroutineScope(Dispatchers.IO).launch {
         try {
             val py = Python.getInstance().getModule("yt_logic")
-            artistTracks.value = mapPyList(py.callAttr("get_artist_songs", id))
+            val songsObj = py.callAttr("get_artist_songs", id)
+            artistTracks.value = mapPyList(songsObj)
         } catch (e: Exception) { e.printStackTrace() }
     }
 
@@ -105,17 +111,23 @@ class MusicViewModel : ViewModel() {
         }
     }
 
+    // ИСПРАВЛЕННЫЙ МАППИНГ: Самый безопасный способ для Гитхаба
     private fun mapPyList(obj: Any?): List<Track> {
-        return (obj as List<*>).map {
-            val p = it as PyObject
-            Track(
-                p.get("id").toString(),
-                p.get("title").toString(),
-                p.get("artist").toString(),
-                p.get("artistId").toString(),
-                p.get("cover").toString()
+        val pyList = obj as? List<*> ?: return emptyList()
+        val result = mutableListOf<Track>()
+        for (item in pyList) {
+            val p = item as PyObject
+            result.add(
+                Track(
+                    id = p.get("id").toString(),
+                    title = p.get("title").toString(),
+                    artist = p.get("artist").toString(),
+                    artistId = p.get("artistId").toString(),
+                    cover = p.get("cover").toString()
+                )
             )
         }
+        return result
     }
 
     fun formatTime(ms: Long): String {
@@ -172,9 +184,10 @@ fun HomeTab(vm: MusicViewModel, p: PaddingValues, onArt: (String, String) -> Uni
     val rec by vm.recTracks.collectAsState()
     val new by vm.newTracks.collectAsState()
     LazyColumn(Modifier.padding(p).fillMaxSize()) {
-        item { Text("Рекомендации", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
+        item { Text("Здравствуйте, Metadon!", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp), color = Color.White) }
+        item { Text("Рекомендации", color = Color.Gray, fontSize = 18.sp, modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)) }
         items(rec) { track -> TrackRow(track, onArt) { vm.play(track) } }
-        item { Text("Новинки", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
+        item { Text("Новинки", color = Color.Gray, fontSize = 18.sp, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)) }
         items(new) { track -> TrackRow(track, onArt) { vm.play(track) } }
     }
 }
@@ -252,7 +265,9 @@ fun FullPlayer(vm: MusicViewModel) {
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly, Alignment.CenterVertically) {
                 Icon(Icons.Default.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.exoPlayer?.seekToPrevious() })
                 Surface(Modifier.size(72.dp).clickable { if (vm.isPlaying.value) vm.exoPlayer?.pause() else vm.exoPlayer?.play() }, shape = CircleShape, color = Color.White) {
-                    Icon(if (vm.isPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.padding(16.dp))
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(if (vm.isPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(40.dp))
+                    }
                 }
                 Icon(Icons.Default.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.exoPlayer?.seekToNext() })
             }
