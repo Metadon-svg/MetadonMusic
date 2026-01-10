@@ -1,14 +1,15 @@
+import com.chaquo.python.android.PythonExtension
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.chaquo.python") // Убедись, что плагин есть в корневом build.gradle.kts
+    id("com.chaquo.python") 
 }
 
 android {
     namespace = "com.metadon.music"
     compileSdk = 34
 
-    // Важно для GitHub Actions
     ndkVersion = "25.1.8937393"
 
     defaultConfig {
@@ -18,13 +19,12 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // ИСПРАВЛЕННЫЙ БЛОК NDK
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
 
-        // ИСПРАВЛЕННЫЙ БЛОК PYTHON
-        python {
+        // БОЛЕЕ СТРОГИЙ СИНТАКСИС ДЛЯ PYTHON
+        configure<PythonExtension> {
             version = "3.10"
             pip {
                 install("ytmusicapi")
@@ -33,10 +33,12 @@ android {
         }
     }
 
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-        }
+    buildFeatures {
+        compose = true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.8"
     }
 
     compileOptions {
@@ -47,14 +49,6 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
-
-    buildFeatures {
-        compose = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
-    }
 }
 
 dependencies {
@@ -62,15 +56,11 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     
-    // Прямые версии Compose для стабильности
     implementation("androidx.compose.ui:ui:1.5.4")
     implementation("androidx.compose.material3:material3:1.1.2")
     implementation("androidx.compose.material:material-icons-extended:1.5.4")
     
-    // Media3 для звука
     implementation("androidx.media3:media3-exoplayer:1.2.0")
     implementation("androidx.media3:media3-session:1.2.0")
-    
-    // Coil для обложек
     implementation("io.coil-kt:coil-compose:2.5.0")
 }
