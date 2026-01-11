@@ -9,12 +9,8 @@ import com.google.gson.JsonObject
 import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.*
 
-data class Track(val id: String, val title: String, val artist: String, val cover: String)
-
 class MusicViewModel : ViewModel() {
-    // === ВВЕДИ СВОЮ ССЫЛКУ ТУТ ===
-    private val baseUrl = "https://amhub.serveousercontent.com" 
-    // =============================
+    private val baseUrl = "https://amhub.serveousercontent.com" // ЗАМЕНИ НА СВОЙ
 
     val recTracks = MutableStateFlow<List<Track>>(emptyList())
     val searchResults = MutableStateFlow<List<Track>>(emptyList())
