@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.*
 
 class MusicViewModel : ViewModel() {
-    private val baseUrl = "https://amhub.serveousercontent.com" // ЗАМЕНИ НА СВОЙ IP
+    private val baseUrl = "https://amhub.serveousercontent.com" // ЗАМЕНИ
     private val client = OkHttpClient()
     private val gson = Gson()
     private var webSocket: WebSocket? = null
@@ -35,7 +35,7 @@ class MusicViewModel : ViewModel() {
     val isPlaying = mutableStateOf(false)
     val isLoading = mutableStateOf(true)
     
-    // Время (используем LongState для примитивов)
+    // Время (Исправлено на LongState)
     val currentPos = mutableLongStateOf(0L)
     val totalDuration = mutableLongStateOf(0L)
     
@@ -90,24 +90,27 @@ class MusicViewModel : ViewModel() {
         }
     }
 
+    // ИСПРАВЛЕННАЯ ИНИЦИАЛИЗАЦИЯ
     fun initPlayer(ctx: android.content.Context) {
         if (player == null) {
-            player = ExoPlayer.Builder(ctx).build().apply {
-                addListener(object : Player.Listener {
-                    override fun onIsPlayingChanged(p: Boolean) { 
-                        isPlaying.value = p 
+            val newPlayer = ExoPlayer.Builder(ctx).build()
+            
+            newPlayer.addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(p: Boolean) { 
+                    isPlaying.value = p 
+                }
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_READY) {
+                        // Явное обращение к newPlayer, чтобы не было ошибки
+                        totalDuration.longValue = newPlayer.duration.coerceAtLeast(0L)
                     }
-                    override fun onPlaybackStateChanged(state: Int) {
-                        if (state == Player.STATE_READY) {
-                            // Явно обращаемся к длительности плеера
-                            totalDuration.longValue = this.duration.coerceAtLeast(0L)
-                        }
-                        if (state == Player.STATE_ENDED) {
-                            next()
-                        }
+                    if (state == Player.STATE_ENDED) {
+                        next()
                     }
-                })
-            }
+                }
+            })
+            
+            player = newPlayer
             startTimer()
         }
     }
@@ -136,8 +139,6 @@ class MusicViewModel : ViewModel() {
         player?.setMediaItem(MediaItem.fromUri("$baseUrl/stream/${t.id}"))
         player?.prepare()
         player?.play()
-        
-        // Тут можно дернуть текст с сервера
     }
 
     fun next() {
