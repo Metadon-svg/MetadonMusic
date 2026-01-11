@@ -8,8 +8,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -17,119 +16,122 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned // ДОБАВЛЕН ИМПОРТ
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
-import com.chaquo.python.Python
-import com.chaquo.python.PyObject
-import com.chaquo.python.android.AndroidPlatform
+import com.google.gson.Gson
+import com.google.gson.JsonObject
+import okhttp3.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 
-data class Track(val id: String, val title: String, val artist: String, val artistId: String, val cover: String)
+data class Track(val id: String, val title: String, val artist: String, val cover: String)
 
 class MusicViewModel : ViewModel() {
     val recTracks = MutableStateFlow<List<Track>>(emptyList())
     val newTracks = MutableStateFlow<List<Track>>(emptyList())
     val searchResults = MutableStateFlow<List<Track>>(emptyList())
-    val artistTracks = MutableStateFlow<List<Track>>(emptyList())
-    
     val currentTrack = MutableStateFlow<Track?>(null)
     
-    // Используем обычные MutableState для UI
-    var isSearching = mutableStateOf(false)
-    var isPlayerFull = mutableStateOf(false)
-    var isMusicPlaying = mutableStateOf(false)
-    var currentPos = mutableStateOf(0L)
-    var totalDuration = mutableStateOf(0L)
+    val isConnected = mutableStateOf(false)
+    val isPlayerFull = mutableStateOf(false)
+    val isPlaying = mutableStateOf(false)
     
+    var serverUrl = mutableStateOf("http://твоя-ссылка:8000")
+    private var webSocket: WebSocket? = null
+    private val client = OkHttpClient()
+    private val gson = Gson()
     var player: ExoPlayer? = null
 
-    fun init(ctx: android.content.Context) {
-        if (player == null) {
-            player = ExoPlayer.Builder(ctx).build().apply {
-                addListener(object : Player.Listener {
-                    override fun onIsPlayingChanged(p: Boolean) { isMusicPlaying.value = p }
-                    override fun onPlaybackStateChanged(state: Int) {
-                        if (state == Player.STATE_READY) totalDuration.value = duration.coerceAtLeast(0)
-                    }
-                })
+    fun connectToServer() {
+        val wsUrl = serverUrl.value
+            .replace("https://", "wss://")
+            .replace("http://", "ws://")
+            .removeSuffix("/") + "/ws"
+        
+        val request = Request.Builder().url(wsUrl).build()
+        webSocket = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                isConnected.value = true
+                // При подключении просим главную страницу (INIT_HOME в твоем server.py)
+                webSocket.send("{\"type\": \"INIT_HOME\"}")
             }
-            loadHome()
-            CoroutineScope(Dispatchers.Main).launch {
-                while(true) {
-                    player?.let { if(it.isPlaying) currentPos.value = it.currentPosition }
-                    delay(1000)
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                val json = gson.fromJson(text, JsonObject::class.java)
+                when(json.get("type").asString) {
+                    "INIT_HOME" -> {
+                        val data = json.getAsJsonObject("data")
+                        recTracks.value = parseTracks(data.getAsJsonArray("rec"))
+                        newTracks.value = parseTracks(data.getAsJsonArray("new"))
+                    }
+                    "SEARCH_RES" -> {
+                        searchResults.value = parseTracks(json.getAsJsonArray("data"))
+                    }
                 }
             }
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                isConnected.value = false
+            }
+        })
+    }
+
+    private fun parseTracks(array: com.google.gson.JsonArray): List<Track> {
+        return array.map {
+            val obj = it.asJsonObject
+            Track(
+                obj.get("id").asString,
+                obj.get("title").asString,
+                obj.get("artist").asString,
+                obj.get("thumb").asString // В твоем сервере это 'thumb'
+            )
         }
     }
 
-    private fun loadHome() = CoroutineScope(Dispatchers.IO).launch {
-        try {
-            val py = Python.getInstance().getModule("yt_logic")
-            val data = py.callAttr("get_home_data")
-            recTracks.value = mapPyList(data.get("rec"))
-            newTracks.value = mapPyList(data.get("new"))
-        } catch (e: Exception) { e.printStackTrace() }
-    }
-
-    fun startSearch(q: String) = CoroutineScope(Dispatchers.IO).launch {
-        if (q.length < 3) return@launch
-        isSearching.value = true
-        try {
-            val py = Python.getInstance().getModule("yt_logic")
-            searchResults.value = mapPyList(py.callAttr("search_music", q))
-        } finally { isSearching.value = false }
-    }
-
-    fun loadArtist(id: String) = CoroutineScope(Dispatchers.IO).launch {
-        val py = Python.getInstance().getModule("yt_logic")
-        artistTracks.value = mapPyList(py.callAttr("get_artist_songs", id))
+    fun search(q: String) {
+        if (q.length > 2) {
+            webSocket?.send("{\"type\": \"SEARCH\", \"query\": \"$q\"}")
+        }
     }
 
     fun play(t: Track) {
         currentTrack.value = t
-        CoroutineScope(Dispatchers.IO).launch {
-            val py = Python.getInstance().getModule("yt_logic")
-            val url = py.callAttr("get_stream_url", t.id).toString()
-            withContext(Dispatchers.Main) {
-                player?.setMediaItem(MediaItem.fromUri(url))
-                player?.prepare()
-                player?.play()
-            }
-        }
-    }
-
-    private fun mapPyList(obj: Any?): List<Track> {
-        val list = obj as? List<*> ?: return emptyList()
-        return list.map {
-            val p = it as PyObject
-            Track(p.get("id").toString(), p.get("title").toString(), p.get("artist").toString(), p.get("artistId").toString(), p.get("cover").toString())
-        }
+        isPlaying.value = true
+        // Используем эндпоинт /stream/{id} из твоего сервера
+        val streamUrl = "${serverUrl.value}/stream/${t.id}"
+        player?.setMediaItem(MediaItem.fromUri(streamUrl))
+        player?.prepare()
+        player?.play()
     }
 }
 
 @Composable
-fun MainApp() {
+fun MainAppUI() {
     val vm: MusicViewModel = viewModel()
     val ctx = LocalContext.current
     var tab by remember { mutableStateOf("home") }
-    var searchActive by remember { mutableStateOf(false) }
-    var searchText by remember { mutableStateOf("") }
-    var artistName by remember { mutableStateOf("") }
+    var showUrlDialog by remember { mutableStateOf(!vm.isConnected.value) }
 
-    LaunchedEffect(Unit) { vm.init(ctx) }
-    BackHandler(tab != "home" || searchActive) { 
-        if (searchActive) searchActive = false else tab = "home" 
+    LaunchedEffect(Unit) { vm.player = ExoPlayer.Builder(ctx).build() }
+
+    if (showUrlDialog) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Настройка сервера") },
+            text = {
+                TextField(
+                    value = vm.serverUrl.value,
+                    onValueChange = { vm.serverUrl.value = it },
+                    label = { Text("URL Сервера (http://...)") }
+                )
+            },
+            confirmButton = {
+                Button(onClick = { vm.connectToServer(); showUrlDialog = false }) { Text("Подключиться") }
+            }
+        )
     }
 
     Scaffold(
@@ -137,10 +139,9 @@ fun MainApp() {
         bottomBar = {
             if (!vm.isPlayerFull.value) {
                 Column {
-                    val cur by vm.currentTrack.collectAsState()
-                    cur?.let { MiniPlayerUI(it, vm) }
+                    vm.currentTrack.collectAsState().value?.let { MiniPlayer(it, vm) }
                     NavigationBar(containerColor = Color.Black) {
-                        NavigationBarItem(selected = tab=="home", onClick={tab="home"; searchActive=false}, icon={Icon(Icons.Default.Home,null)}, label={Text("Главная")})
+                        NavigationBarItem(selected = tab=="home", onClick={tab="home"}, icon={Icon(Icons.Default.Home,null)}, label={Text("Главная")})
                         NavigationBarItem(selected = tab=="nav", onClick={tab="nav"}, icon={Icon(Icons.Default.Explore,null)}, label={Text("Навигатор")})
                         NavigationBarItem(selected = tab=="lib", onClick={tab="lib"}, icon={Icon(Icons.Default.LibraryMusic,null)}, label={Text("Библиотека")})
                     }
@@ -148,89 +149,67 @@ fun MainApp() {
             }
         }
     ) { p ->
-        Box(Modifier.padding(p).fillMaxSize()) {
+        Box(Modifier.padding(p)) {
             when(tab) {
-                "home" -> {
-                    Column {
-                        SearchBarUI(searchText, { searchText = it; vm.startSearch(it) }, { searchActive = true })
-                        if (searchActive) SearchList(vm) else HomeList(vm) { id, name -> artistName = name; vm.loadArtist(id); tab = "artist" }
-                    }
-                }
-                "artist" -> ArtistList(artistName, vm)
+                "home" -> HomeContent(vm)
                 else -> Box(Modifier.fillMaxSize(), Alignment.Center) { Text("В разработке", color = Color.White) }
             }
         }
-        if (vm.isPlayerFull.value) FullPlayerUI(vm)
     }
+    
+    if (vm.isPlayerFull.value) FullPlayerUI(vm)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchBarUI(text: String, onValueChange: (String) -> Unit, onFocus: () -> Unit) {
-    TextField(
-        value = text, onValueChange = onValueChange,
-        modifier = Modifier.fillMaxWidth().padding(16.dp).onGloballyPositioned { onFocus() },
-        placeholder = { Text("Поиск музыки...") },
-        leadingIcon = { Icon(Icons.Default.Search, null) },
-        shape = RoundedCornerShape(12.dp),
-        colors = TextFieldDefaults.colors( // ИСПРАВЛЕНО ДЛЯ MATERIAL 3
-            focusedContainerColor = Color(0xFF1A1A1A),
-            unfocusedContainerColor = Color(0xFF1A1A1A),
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White
-        )
-    )
-}
-
-@Composable
-fun HomeList(vm: MusicViewModel, onArt: (String, String) -> Unit) {
+fun HomeContent(vm: MusicViewModel) {
     val rec by vm.recTracks.collectAsState()
     val new by vm.newTracks.collectAsState()
-    LazyColumn {
-        item { Text("Рекомендации", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
-        items(rec) { TrackRow(it, onArt) { vm.play(it) } }
-        item { Text("Новинки", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
-        items(new) { TrackRow(it, onArt) { vm.play(it) } }
-    }
-}
+    var q by remember { mutableStateOf("") }
 
-@Composable
-fun SearchList(vm: MusicViewModel) {
-    val res by vm.searchResults.collectAsState()
-    if (vm.isSearching.value) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Color.Red)
-    LazyColumn { items(res) { TrackRow(it, {_,_ ->}) { vm.play(it) } } }
-}
-
-@Composable
-fun ArtistList(name: String, vm: MusicViewModel) {
-    val tracks by vm.artistTracks.collectAsState()
     Column {
-        Text(name, color = Color.White, fontSize = 28.sp, modifier = Modifier.padding(16.dp))
-        LazyColumn { items(tracks) { TrackRow(it, {_,_ ->}) { vm.play(it) } } }
-    }
-}
-
-@Composable
-fun TrackRow(t: Track, onArt: (String, String) -> Unit, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(4.dp)), contentScale = ContentScale.Crop)
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
-            Text(t.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(t.artist, color = Color.Gray, modifier = Modifier.clickable { if(t.artistId.isNotEmpty()) onArt(t.artistId, t.artist) })
+        TextField(
+            value = q, onValueChange = { q = it; vm.search(it) },
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            placeholder = { Text("Поиск на сервере...") },
+            shape = RoundedCornerShape(12.dp),
+            colors = TextFieldDefaults.colors(focusedContainerColor = Color(0xFF1A1A1A), unfocusedContainerColor = Color(0xFF1A1A1A), focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+        )
+        
+        LazyColumn {
+            item { Text("Рекомендации с сервера", color = Color.White, modifier = Modifier.padding(16.dp)) }
+            items(if(q.isEmpty()) rec else vm.searchResults.collectAsState().value) { track ->
+                TrackRow(track) { vm.play(track) }
+            }
+            if(q.isEmpty()) {
+                item { Text("Новинки", color = Color.White, modifier = Modifier.padding(16.dp)) }
+                items(new) { track -> TrackRow(track) { vm.play(track) } }
+            }
         }
     }
 }
 
 @Composable
-fun MiniPlayerUI(t: Track, vm: MusicViewModel) {
+fun TrackRow(t: Track, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(4.dp)))
+        Spacer(Modifier.width(16.dp))
+        Column {
+            Text(t.title, color = Color.White, fontWeight = FontWeight.Bold)
+            Text(t.artist, color = Color.Gray)
+        }
+    }
+}
+
+@Composable
+fun MiniPlayer(t: Track, vm: MusicViewModel) {
     Surface(Modifier.fillMaxWidth().height(64.dp).clickable { vm.isPlayerFull.value = true }, color = Color(0xFF1A1A1A)) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(4.dp)))
             Spacer(Modifier.width(12.dp))
             Text(t.title, color = Color.White, modifier = Modifier.weight(1f), maxLines = 1)
-            IconButton(onClick = { if (vm.isMusicPlaying.value) vm.player?.pause() else vm.player?.play() }) {
-                Icon(if (vm.isMusicPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.White)
+            IconButton(onClick = { if (vm.isPlaying.value) vm.player?.pause() else vm.player?.play(); vm.isPlaying.value = !vm.isPlaying.value }) {
+                Icon(if (vm.isPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.White)
             }
         }
     }
@@ -241,19 +220,13 @@ fun FullPlayerUI(vm: MusicViewModel) {
     val t = vm.currentTrack.collectAsState().value ?: return
     Box(Modifier.fillMaxSize().background(Color.Black).padding(24.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            IconButton(onClick = { vm.isPlayerFull.value = false }, Modifier.align(Alignment.Start)) {
-                Icon(Icons.Default.KeyboardArrowDown, null, tint = Color.White, modifier = Modifier.size(36.dp))
-            }
-            Spacer(Modifier.height(20.dp)); AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(320.dp).clip(RoundedCornerShape(12.dp)))
-            Spacer(Modifier.height(24.dp)); Text(t.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold); Text(t.artist, color = Color.Gray, fontSize = 18.sp)
+            IconButton(onClick = { vm.isPlayerFull.value = false }, Modifier.align(Alignment.Start)) { Icon(Icons.Default.KeyboardArrowDown, null, tint = Color.White) }
+            AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(320.dp).clip(RoundedCornerShape(12.dp)))
+            Text(t.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(t.artist, color = Color.Gray, fontSize = 18.sp)
             Spacer(Modifier.height(24.dp))
-            Slider(value = vm.currentPos.value.toFloat(), valueRange = 0f..vm.totalDuration.value.toFloat().coerceAtLeast(1f), onValueChange = { vm.player?.seekTo(it.toLong()) }, colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White))
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly) {
-                Icon(Icons.Default.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.player?.seekToPrevious() })
-                Surface(Modifier.size(72.dp).clickable { if (vm.isMusicPlaying.value) vm.player?.pause() else vm.player?.play() }, shape = CircleShape, color = Color.White) {
-                    Box(contentAlignment = Alignment.Center) { Icon(if (vm.isMusicPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(40.dp)) }
-                }
-                Icon(Icons.Default.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.player?.seekToNext() })
+            Button(onClick = { if (vm.isPlaying.value) vm.player?.pause() else vm.player?.play(); vm.isPlaying.value = !vm.isPlaying.value }) {
+                Text(if (vm.isPlaying.value) "Пауза" else "Играть")
             }
         }
     }
@@ -262,7 +235,6 @@ fun FullPlayerUI(vm: MusicViewModel) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (!Python.isStarted()) Python.start(AndroidPlatform(this))
-        setContent { MaterialTheme { MainApp() } }
+        setContent { MaterialTheme { MainAppUI() } }
     }
 }
