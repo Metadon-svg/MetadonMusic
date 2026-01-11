@@ -1,7 +1,6 @@
 package com.metadon.music
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
@@ -14,10 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.*
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput // ВОТ ЭТОТ ИМПОРТ БЫЛ НУЖЕН
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -26,17 +23,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import androidx.media3.exoplayer.ExoPlayer
 
 @Composable
 fun MainAppScreen() {
     val vm: MusicViewModel = viewModel()
     val ctx = LocalContext.current
-    
     val curTrack by vm.currentTrack.collectAsState()
-    val homeData by vm.homeData.collectAsState()
-    val isLoading = vm.isLoading.value
-    
+    val recTracks by vm.recTracks.collectAsState()
+    val searchResults by vm.searchResults.collectAsState()
     val isPlaying = vm.isPlaying.value
     val isFull = vm.isPlayerFull.value
 
@@ -44,15 +38,8 @@ fun MainAppScreen() {
     var q by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        if (vm.player == null) {
-            vm.player = ExoPlayer.Builder(ctx).build().apply {
-                addListener(object : androidx.media3.common.Player.Listener {
-                    override fun onIsPlayingChanged(p: Boolean) { vm.isPlaying.value = p }
-                })
-            }
-        }
+        vm.initPlayer(ctx)
         vm.connect()
-        vm.startTimer()
     }
 
     Scaffold(
@@ -74,7 +61,7 @@ fun MainAppScreen() {
     ) { p ->
         Box(Modifier.padding(p).fillMaxSize()) {
             when (tab) {
-                "home" -> HomeTabUI(vm, homeData, isLoading)
+                "home" -> HomeTabUI(vm, recTracks)
                 "search" -> SearchTabUI(vm, q) { q = it }
                 "lib" -> LibraryTabUI(vm)
             }
@@ -86,90 +73,8 @@ fun MainAppScreen() {
     }
 }
 
-// --- СКЕЛЕТОН ---
-@Composable
-fun ShimmerItem() {
-    val transition = rememberInfiniteTransition()
-    val translateAnim by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1000f,
-        animationSpec = infiniteRepeatable(tween(1000, easing = LinearEasing), RepeatMode.Restart)
-    )
-    val brush = Brush.linearGradient(
-        colors = listOf(Color.DarkGray.copy(0.3f), Color.LightGray.copy(0.2f), Color.DarkGray.copy(0.3f)),
-        start = Offset(translateAnim - 500f, translateAnim - 500f),
-        end = Offset(translateAnim, translateAnim)
-    )
-    Box(Modifier.padding(end = 16.dp).size(150.dp).clip(RoundedCornerShape(12.dp)).background(brush))
-}
-
-// --- ГЛАВНАЯ ---
-@Composable
-fun HomeTabUI(vm: MusicViewModel, data: Map<String, List<Track>>, loading: Boolean) {
-    LazyColumn(Modifier.fillMaxSize()) {
-        item {
-            Row(Modifier.padding(16.dp).horizontalScroll(rememberScrollState())) {
-                listOf("Всё", "Релакс", "Сон", "Энергия").forEach {
-                    SuggestionChip(
-                        onClick = {},
-                        label = { Text(it, color = Color.White) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color(0xFF1E1E1E)),
-                        border = null,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                }
-            }
-        }
-
-        if (loading) {
-            item { Text("Загрузка...", color = Color.Gray, modifier = Modifier.padding(16.dp)) }
-            item { LazyRow(contentPadding = PaddingValues(16.dp)) { items(3) { ShimmerItem() } } }
-        } else {
-            data.forEach { (title, tracks) ->
-                item { Text(title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 24.dp)) }
-                item {
-                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
-                        items(tracks) { t ->
-                            Column(Modifier.width(150.dp).padding(end = 16.dp).clickable { vm.play(t, tracks) }) {
-                                AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(150.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
-                                Spacer(Modifier.height(8.dp))
-                                Text(t.title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-                                Text(t.artist, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        item { Spacer(Modifier.height(100.dp)) }
-    }
-}
-
-// --- МИНИ ПЛЕЕР ---
-@Composable
-fun MiniPlayerUI(t: Track, isPlaying: Boolean, vm: MusicViewModel) {
-    Box(
-        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp).fillMaxWidth().height(64.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .clickable { vm.isPlayerFull.value = true }
-    ) {
-        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.fillMaxSize().blur(50.dp).alpha(0.7f), contentScale = ContentScale.Crop)
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(0.2f)))
-        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(t.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(t.artist, color = Color.LightGray, fontSize = 12.sp, maxLines = 1)
-            }
-            IconButton(onClick = { if (isPlaying) vm.player?.pause() else vm.player?.play() }) {
-                Icon(if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.White)
-            }
-        }
-    }
-}
-
-// --- ПОЛНЫЙ ПЛЕЕР ---
+// --- ПОЛНЫЙ ПЛЕЕР (С ИСПРАВЛЕННЫМИ КНОПКАМИ) ---
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FullPlayerUI(vm: MusicViewModel) {
     val t = vm.currentTrack.collectAsState().value ?: return
@@ -179,28 +84,46 @@ fun FullPlayerUI(vm: MusicViewModel) {
     val isPlaying = vm.isPlaying.value
     val isLiked = t.isLiked
     
+    // Состояния кнопок
+    val shuffleColor = if (vm.isShuffle.value) Color.White else Color.White.copy(0.3f)
+    val repeatMode = vm.repeatMode.value
+    // Логика иконки повтора
+    val repeatIcon = if (repeatMode == 2) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat
+    val repeatColor = if (repeatMode == 0) Color.White.copy(0.3f) else Color.White
+    
     var playerTab by remember { mutableStateOf("track") }
     var showMenu by remember { mutableStateOf(false) }
 
-    // ЗДЕСЬ ИСПОЛЬЗУЕТСЯ pointerInput
+    if (showMenu) {
+        ModalBottomSheet(onDismissRequest = { showMenu = false }, containerColor = Color(0xFF1E1E1E)) {
+            Column(Modifier.padding(bottom = 24.dp)) {
+                MenuItem(Icons.Default.Download, "Скачать")
+                MenuItem(Icons.Default.PlaylistAdd, "Добавить в плейлист")
+            }
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(Color(0xFF0D0D0D)).pointerInput(Unit){}) {
-        AsyncImage(model = t.cover, null, Modifier.fillMaxSize().blur(100.dp).alpha(0.5f), contentScale = ContentScale.Crop)
+        AsyncImage(
+            model = t.cover, contentDescription = null, 
+            modifier = Modifier.fillMaxSize().blur(100.dp).alpha(0.6f), 
+            contentScale = ContentScale.Crop
+        )
         Box(Modifier.fillMaxSize().background(Color.Black.copy(0.4f)))
 
         Column(Modifier.padding(24.dp).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                IconButton(onClick = { vm.isPlayerFull.value = false }) { Icon(Icons.Rounded.KeyboardArrowDown, null, tint = Color.White, modifier = Modifier.size(36.dp)) }
+                IconButton(onClick = { vm.isPlayerFull.value = false }) {
+                    Icon(Icons.Rounded.KeyboardArrowDown, null, tint = Color.White, modifier = Modifier.size(36.dp))
+                }
                 Surface(color = Color.White.copy(0.1f), shape = RoundedCornerShape(20.dp)) {
                     Row(Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) {
-                        Text("Трек", color = if(playerTab=="track") Color.White else Color.Gray, modifier = Modifier.clickable{playerTab="track"}.padding(8.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text("Текст", color = if(playerTab=="lyrics") Color.White else Color.Gray, modifier = Modifier.clickable{playerTab="lyrics"}.padding(8.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Трек", color = if(playerTab=="track") Color.White else Color.Gray, modifier = Modifier.clickable { playerTab="track" }.padding(8.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Текст", color = if(playerTab=="lyrics") Color.White else Color.Gray, modifier = Modifier.clickable { playerTab="lyrics" }.padding(8.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
                 Box {
                     IconButton(onClick = { showMenu = true }) { Icon(Icons.Rounded.MoreVert, null, tint = Color.White) }
-                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, modifier = Modifier.background(Color(0xFF1E1E1E))) {
-                        DropdownMenuItem(text = { Text("Скачать", color = Color.White) }, onClick = {})
-                    }
                 }
             }
 
@@ -214,34 +137,64 @@ fun FullPlayerUI(vm: MusicViewModel) {
                 
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(t.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                        Text(t.title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
                         Text(t.artist, color = Color.White.copy(0.7f), fontSize = 18.sp, maxLines = 1)
                     }
                     IconButton(onClick = { vm.toggleLike(t) }) {
-                        Icon(if(isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if(isLiked) Color.Red else Color.White, modifier = Modifier.size(32.dp))
+                        Icon(if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if (isLiked) Color.Red else Color.White, modifier = Modifier.size(32.dp))
                     }
                 }
 
                 Spacer(Modifier.height(24.dp))
-                Slider(value = pos.toFloat(), valueRange = 0f..dur.toFloat().coerceAtLeast(1f), onValueChange = { vm.seekTo(it) }, colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White))
+                Slider(
+                    value = pos.toFloat(),
+                    valueRange = 0f..dur.toFloat().coerceAtLeast(1f),
+                    onValueChange = { vm.seekTo(it) },
+                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(0.2f))
+                )
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                    Text(vm.formatTime(pos), color = Color.LightGray, fontSize = 12.sp)
-                    Text(vm.formatTime(dur), color = Color.LightGray, fontSize = 12.sp)
+                    Text(vm.formatTime(pos), color = Color.White.copy(0.6f), fontSize = 12.sp)
+                    Text(vm.formatTime(dur), color = Color.White.copy(0.6f), fontSize = 12.sp)
                 }
 
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(24.dp))
+                
+                // КНОПКИ УПРАВЛЕНИЯ
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly, Alignment.CenterVertically) {
-                    IconButton(onClick = { vm.toggleShuffle() }) { Icon(Icons.Rounded.Shuffle, null, tint = if(vm.isShuffle.value) Color.White else Color.Gray) }
-                    IconButton(onClick = { vm.prev() }) { Icon(Icons.Rounded.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp)) }
-                    Surface(Modifier.size(80.dp).clickable { if(vm.isPlaying.value) vm.player?.pause() else vm.player?.play() }, shape = CircleShape, color = Color.White) {
-                        Box(contentAlignment = Alignment.Center) { Icon(if(vm.isPlaying.value) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(40.dp)) }
+                    // Shuffle
+                    IconButton(onClick = { vm.toggleShuffle() }) { 
+                        Icon(Icons.Rounded.Shuffle, null, tint = shuffleColor) 
                     }
-                    IconButton(onClick = { vm.next() }) { Icon(Icons.Rounded.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp)) }
-                    IconButton(onClick = { vm.toggleRepeat() }) { Icon(Icons.Rounded.Repeat, null, tint = if(vm.repeatMode.value > 0) Color.White else Color.Gray) }
+                    
+                    // Prev
+                    IconButton(onClick = { vm.prev() }) { 
+                        Icon(Icons.Rounded.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp)) 
+                    }
+                    
+                    // Play/Pause
+                    Surface(modifier = Modifier.size(80.dp).clickable { 
+                        if(isPlaying) vm.player?.pause() else vm.player?.play() 
+                    }, shape = CircleShape, color = Color.White) {
+                        Box(contentAlignment = Alignment.Center) { 
+                            Icon(if(isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(40.dp)) 
+                        }
+                    }
+
+                    // Next
+                    IconButton(onClick = { vm.next() }) { 
+                        Icon(Icons.Rounded.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp)) 
+                    }
+                    
+                    // Repeat (меняет иконку и цвет)
+                    IconButton(onClick = { vm.toggleRepeat() }) { 
+                        Icon(repeatIcon, null, tint = repeatColor) 
+                    }
                 }
             } else {
                 LazyColumn(Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    item { Text(lyrics, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, lineHeight = 36.sp, modifier = Modifier.padding(vertical = 32.dp)) }
+                    item {
+                        Text(lyrics, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, lineHeight = 36.sp, modifier = Modifier.padding(vertical = 32.dp))
+                    }
                 }
             }
             Spacer(Modifier.height(20.dp))
@@ -249,26 +202,52 @@ fun FullPlayerUI(vm: MusicViewModel) {
     }
 }
 
-// --- БИБЛИОТЕКА ---
 @Composable
-fun LibraryTabUI(vm: MusicViewModel) {
-    val favs by vm.likedTracks.collectAsState()
-    LazyColumn(Modifier.fillMaxSize()) {
-        item { Text("Медиатека", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
-        item {
-            Row(Modifier.fillMaxWidth().clickable {}.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(56.dp).background(Brush.linearGradient(listOf(Color(0xFF6441A5), Color(0xFF2a0845))), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.ThumbUp, null, tint = Color.White)
-                }
-                Spacer(Modifier.width(16.dp))
-                Column { Text("Понравившаяся", color = Color.White, fontWeight = FontWeight.Bold); Text("${favs.size} треков", color = Color.Gray, fontSize = 12.sp) }
-            }
-        }
-        items(favs) { TrackRowUI(it, vm) }
+fun MenuItem(icon: ImageVector, text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {}
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(imageVector = icon, contentDescription = null, tint = Color.White)
+        Spacer(Modifier.width(16.dp))
+        Text(text, color = Color.White, fontSize = 16.sp)
     }
 }
 
-// --- ПОИСК ---
+// ... Остальные компоненты (MiniPlayerUI, TrackRowUI и т.д.) оставь как были, они работают
+// Но я дублирую их ниже для целостности файла, если ты копируешь целиком
+
+@Composable
+fun MiniPlayerUI(t: Track, isPlaying: Boolean, vm: MusicViewModel) {
+    Card(
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp).fillMaxWidth().height(64.dp).clickable { vm.isPlayerFull.value = true },
+        shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A))
+    ) {
+        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(t.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(t.artist, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
+            }
+            IconButton(onClick = { if (isPlaying) vm.player?.pause() else vm.player?.play() }) {
+                Icon(if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(32.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun HomeTabUI(vm: MusicViewModel, tracks: List<Track>) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { Text("Главная", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(20.dp)) }
+        items(tracks) { t -> TrackRowUI(t, vm) }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchTabUI(vm: MusicViewModel, q: String, onQ: (String) -> Unit) {
@@ -282,7 +261,7 @@ fun SearchTabUI(vm: MusicViewModel, q: String, onQ: (String) -> Unit) {
             leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.Gray) }
         )
         LazyColumn {
-            if (res.isEmpty() && q.isNotEmpty()) {
+            if (res.isEmpty()) {
                 items(sugs) { s ->
                     Row(Modifier.fillMaxWidth().clickable { onQ(s); vm.search(s) }.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(s, color = Color.White, fontSize = 16.sp)
@@ -293,6 +272,15 @@ fun SearchTabUI(vm: MusicViewModel, q: String, onQ: (String) -> Unit) {
                 items(res) { t -> TrackRowUI(t, vm) }
             }
         }
+    }
+}
+
+@Composable
+fun LibraryTabUI(vm: MusicViewModel) {
+    val favs by vm.likedTracks.collectAsState()
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { Text("Медиатека", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
+        items(favs) { t -> TrackRowUI(t, vm) }
     }
 }
 
