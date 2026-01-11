@@ -7,6 +7,7 @@ plugins {
 android {
     namespace 'com.metadon.music'
     compileSdk 34
+
     defaultConfig {
         applicationId "com.metadon.music"
         minSdk 26
@@ -14,8 +15,9 @@ android {
         versionCode 1
         versionName "1.0"
 
-        // ABI фильтры заставляют Gradle упаковывать Python под разные процессоры, что увеличивает вес APK
-        ndk { abiFilters "arm64-v8a", "armeabi-v7a" }
+        ndk {
+            abiFilters "arm64-v8a", "armeabi-v7a"
+        }
 
         python {
             version "3.10"
@@ -25,10 +27,28 @@ android {
             }
         }
     }
-    buildFeatures { compose true }
-    composeOptions { kotlinCompilerExtensionVersion "1.5.8" }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    buildFeatures {
+        compose true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion "1.5.8"
+    }
+
     packagingOptions {
-        resources { excludes += '/META-INF/{AL2.0,LGPL2.1}' }
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
     }
 }
 
@@ -40,11 +60,8 @@ dependencies {
     implementation "androidx.compose.ui:ui:1.5.4"
     implementation "androidx.compose.material3:material3:1.1.2"
     implementation "androidx.compose.material:material-icons-extended:1.5.4"
-    
-    // СЕТЬ
     implementation "com.squareup.okhttp3:okhttp:4.12.0"
     implementation "com.google.code.gson:gson:2.10.1"
-
     implementation "androidx.media3:media3-exoplayer:1.2.0"
     implementation "io.coil-kt:coil-compose:2.5.0"
 }
