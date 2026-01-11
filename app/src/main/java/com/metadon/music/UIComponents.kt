@@ -22,9 +22,17 @@ import androidx.media3.exoplayer.ExoPlayer
 fun MainAppScreen() {
     val vm: MusicViewModel = viewModel()
     val ctx = LocalContext.current
+    
+    // ВЫНОСИМ СОСТОЯНИЯ В НАЧАЛО
+    val recTracks by vm.recTracks.collectAsState()
+    val searchResults by vm.searchResults.collectAsState()
+    val currentTrack by vm.currentTrack.collectAsState()
+    val isConnected = vm.isConnected.value
+    val isPlayerFull = vm.isPlayerFull.value
+    val isPlaying = vm.isPlaying.value
+
     var q by remember { mutableStateOf("") }
 
-    // Подключаемся автоматически при старте
     LaunchedEffect(Unit) {
         vm.player = ExoPlayer.Builder(ctx).build()
         vm.connect()
@@ -33,21 +41,21 @@ fun MainAppScreen() {
     Scaffold(
         containerColor = Color.Black,
         bottomBar = {
-            Column {
-                vm.currentTrack.collectAsState().value?.let { MiniPlayerUI(it, vm) }
-                BottomNavigationBarUI()
+            if (!isPlayerFull) {
+                Column {
+                    currentTrack?.let { MiniPlayerUI(it, isPlaying, vm) }
+                    BottomNavigationBarUI()
+                }
             }
         }
     ) { p ->
         Column(Modifier.padding(p)) {
-            // Логотип сверху
             Text("Music", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp))
             
-            // Поиск
             TextField(
                 value = q, onValueChange = { q = it; vm.search(it) },
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
-                placeholder = { Text("Поиск песен...") },
+                placeholder = { Text("Поиск...") },
                 shape = RoundedCornerShape(12.dp),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color(0xFF1A1A1A),
@@ -58,9 +66,8 @@ fun MainAppScreen() {
                 leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.Gray) }
             )
 
-            // Список песен
             LazyColumn {
-                val list = if (q.isEmpty()) vm.recTracks.collectAsState().value else vm.searchResults.collectAsState().value
+                val list = if (q.isEmpty()) recTracks else searchResults
                 items(list) { track ->
                     TrackItemUI(track) { vm.play(track) }
                 }
@@ -68,7 +75,9 @@ fun MainAppScreen() {
         }
     }
 
-    if (vm.isPlayerFull.value) FullPlayerUI(vm)
+    if (isPlayerFull) {
+        FullPlayerUI(currentTrack, isPlaying, vm)
+    }
 }
 
 @Composable
@@ -84,25 +93,25 @@ fun TrackItemUI(t: Track, onClick: () -> Unit) {
 }
 
 @Composable
-fun MiniPlayerUI(t: Track, vm: MusicViewModel) {
+fun MiniPlayerUI(t: Track, isPlaying: Boolean, vm: MusicViewModel) {
     Surface(Modifier.fillMaxWidth().height(64.dp).clickable { vm.isPlayerFull.value = true }, color = Color(0xFF1A1A1A)) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(4.dp)))
             Spacer(Modifier.width(12.dp))
             Text(t.title, color = Color.White, modifier = Modifier.weight(1f), maxLines = 1)
             IconButton(onClick = { 
-                if (vm.isPlaying.value) vm.player?.pause() else vm.player?.play()
-                vm.isPlaying.value = !vm.isPlaying.value 
+                if (isPlaying) vm.player?.pause() else vm.player?.play()
+                vm.isPlaying.value = !isPlaying
             }) {
-                Icon(if (vm.isPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.White)
+                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.White)
             }
         }
     }
 }
 
 @Composable
-fun FullPlayerUI(vm: MusicViewModel) {
-    val t = vm.currentTrack.collectAsState().value ?: return
+fun FullPlayerUI(t: Track?, isPlaying: Boolean, vm: MusicViewModel) {
+    if (t == null) return
     Box(Modifier.fillMaxSize().background(Color.Black).padding(24.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             IconButton(onClick = { vm.isPlayerFull.value = false }, Modifier.align(Alignment.Start)) {
@@ -114,10 +123,10 @@ fun FullPlayerUI(vm: MusicViewModel) {
             Text(t.artist, color = Color.Gray, fontSize = 18.sp)
             Spacer(Modifier.height(40.dp))
             Button(onClick = { 
-                if (vm.isPlaying.value) vm.player?.pause() else vm.player?.play()
-                vm.isPlaying.value = !vm.isPlaying.value 
+                if (isPlaying) vm.player?.pause() else vm.player?.play()
+                vm.isPlaying.value = !isPlaying 
             }, colors = ButtonDefaults.buttonColors(containerColor = Color.White)) {
-                Text(if (vm.isPlaying.value) "Пауза" else "Играть", color = Color.Black)
+                Text(if (isPlaying) "Пауза" else "Играть", color = Color.Black)
             }
         }
     }
