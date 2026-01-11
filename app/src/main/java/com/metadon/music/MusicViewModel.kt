@@ -2,7 +2,6 @@ package com.metadon.music
 
 import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -13,32 +12,37 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.*
 
 class MusicViewModel : ViewModel() {
-    private val baseUrl = "https://amhub.serveousercontent.com" // ВПИШИ СЮДА СВОЙ IP
+    private val baseUrl = "https://amhub.serveousercontent.com" // ЗАМЕНИ НА СВОЙ IP
     private val client = OkHttpClient()
     private val gson = Gson()
     private var webSocket: WebSocket? = null
     var player: ExoPlayer? = null
 
-    // Данные
+    // --- ДАННЫЕ ---
     val recTracks = MutableStateFlow<List<Track>>(emptyList())
     val searchResults = MutableStateFlow<List<Track>>(emptyList())
     val suggestions = MutableStateFlow<List<String>>(emptyList())
     val likedTracks = MutableStateFlow<List<Track>>(emptyList())
     val currentTrack = MutableStateFlow<Track?>(null)
     val lyricsText = MutableStateFlow("Загрузка текста...")
+    
+    // Данные для главной (Карусели)
+    val homeData = MutableStateFlow<Map<String, List<Track>>>(emptyMap())
 
-    // Состояния UI
+    // --- СОСТОЯНИЯ ---
     val isConnected = mutableStateOf(false)
     val isPlayerFull = mutableStateOf(false)
     val isPlaying = mutableStateOf(false)
+    val isLoading = mutableStateOf(true) // Индикатор загрузки для скелетона
+    
     val currentPos = mutableStateOf(0L)
     val totalDuration = mutableStateOf(0L)
     
-    // Режимы воспроизведения
+    // Режимы
     val isShuffle = mutableStateOf(false)
     val repeatMode = mutableStateOf(0)
 
-    // Очередь воспроизведения
+    // Очередь
     private var queue: List<Track> = emptyList()
 
     fun connect() {
@@ -57,7 +61,16 @@ class MusicViewModel : ViewModel() {
                     when (json.get("type").asString) {
                         "INIT_HOME" -> {
                             val data = json.getAsJsonObject("data")
-                            recTracks.value = parseTracks(data.getAsJsonArray("rec"))
+                            val rec = parseTracks(data.getAsJsonArray("rec"))
+                            val new = parseTracks(data.getAsJsonArray("new"))
+                            
+                            // Заполняем homeData для каруселей
+                            homeData.value = mapOf(
+                                "Для вас" to rec,
+                                "Новинки" to new,
+                                "В тренде" to rec.shuffled()
+                            )
+                            isLoading.value = false // Выключаем скелетон
                         }
                         "SEARCH_RES" -> searchResults.value = parseTracks(json.getAsJsonArray("data"))
                         "SUGGEST_RES" -> suggestions.value = json.getAsJsonArray("data").map { it.asString }
@@ -80,7 +93,20 @@ class MusicViewModel : ViewModel() {
         }
     }
 
-    // Запуск песни с обновлением очереди
+    fun startTimer() {
+        CoroutineScope(Dispatchers.Main).launch {
+            while (true) {
+                player?.let {
+                    if (it.isPlaying) {
+                        currentPos.value = it.currentPosition
+                        totalDuration.value = it.duration.coerceAtLeast(0L)
+                    }
+                }
+                delay(1000)
+            }
+        }
+    }
+
     fun play(t: Track, contextList: List<Track> = emptyList()) {
         if (contextList.isNotEmpty()) queue = contextList
         currentTrack.value = t
@@ -88,8 +114,8 @@ class MusicViewModel : ViewModel() {
         
         // Проверка лайка
         t.isLiked = likedTracks.value.any { it.id == t.id }
-
-        // Загрузка текста (эмуляция или запрос)
+        
+        // Загрузка текста (заглушка или реальный запрос)
         loadLyrics(t.id)
 
         player?.setMediaItem(MediaItem.fromUri("$baseUrl/stream/${t.id}"))
@@ -98,17 +124,10 @@ class MusicViewModel : ViewModel() {
     }
 
     private fun loadLyrics(id: String) {
-        // Здесь можно добавить реальный запрос к серверу за текстом
-        // Пока просто сброс
         lyricsText.value = "Загрузка текста..."
-        CoroutineScope(Dispatchers.IO).launch {
-            // Эмуляция запроса
-            delay(1000)
-            // Если на сервере есть эндпоинт /lyrics/id, можно дернуть его через OkHttp
-        }
+        // Тут можно добавить запрос к серверу через OkHttp, если нужно
     }
 
-    // --- УПРАВЛЕНИЕ ОЧЕРЕДЬЮ (Prev/Next) ---
     fun next() {
         if (queue.isEmpty()) return
         val current = currentTrack.value
@@ -125,9 +144,13 @@ class MusicViewModel : ViewModel() {
         if (index > 0) {
             play(queue[index - 1])
         } else {
-            // Если начало списка, просто перезапускаем трек
             player?.seekTo(0)
         }
+    }
+
+    fun seekTo(pos: Float) {
+        player?.seekTo(pos.toLong())
+        currentPos.value = pos.toLong()
     }
 
     fun toggleShuffle() {
@@ -151,28 +174,7 @@ class MusicViewModel : ViewModel() {
         webSocket?.send("{\"type\": \"LIKE\", \"user_id\": 1, \"id\": \"${t.id}\", \"title\": \"${t.title}\", \"artist\": \"${t.artist}\", \"thumb\": \"${t.cover}\"}")
     }
 
-    fun startTimer() {
-        CoroutineScope(Dispatchers.Main).launch {
-            while (true) {
-                player?.let {
-                    if (it.isPlaying) {
-                        currentPos.value = it.currentPosition
-                        totalDuration.value = it.duration.coerceAtLeast(0L)
-                    }
-                }
-                delay(1000)
-            }
-        }
-    }
-
-    fun seekTo(pos: Float) {
-        player?.seekTo(pos.toLong())
-        currentPos.value = pos.toLong()
-    }
-
     fun search(q: String) { if(q.length > 2) webSocket?.send("{\"type\": \"SEARCH\", \"query\": \"$q\"}") }
-    
-    // ВОТ ЭТА ФУНКЦИЯ, КОТОРОЙ НЕ ХВАТАЛО
     fun suggest(q: String) { if(q.length > 1) webSocket?.send("{\"type\": \"SUGGEST\", \"query\": \"$q\"}") }
 
     fun formatTime(ms: Long): String {
