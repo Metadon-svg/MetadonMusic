@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.*
 
 class MusicViewModel : ViewModel() {
-    private val baseUrl = "https://amhub.serveousercontent.com"
+    private val baseUrl = "https://amhub.serveousercontent.com" // ЗАМЕНИ НА СВОЙ
     private val client = OkHttpClient()
     private val gson = Gson()
     private var webSocket: WebSocket? = null
@@ -20,43 +20,54 @@ class MusicViewModel : ViewModel() {
 
     val recTracks = MutableStateFlow<List<Track>>(emptyList())
     val searchResults = MutableStateFlow<List<Track>>(emptyList())
-    val suggestions = MutableStateFlow<List<String>>(emptyList())
-    val playlists = MutableStateFlow<List<Playlist>>(emptyList())
     val currentTrack = MutableStateFlow<Track?>(null)
 
     val isConnected = mutableStateOf(false)
     val isPlayerFull = mutableStateOf(false)
     val isPlaying = mutableStateOf(false)
     
-    // ДЛЯ ПЕРЕМОТКИ
+    // Переменные времени (используем обычный Long для совместимости)
     val currentPos = mutableStateOf(0L)
     val totalDuration = mutableStateOf(0L)
 
     fun connect() {
         val wsUrl = baseUrl.replace("http", "ws").removeSuffix("/") + "/ws"
-        client.newWebSocket(Request.Builder().url(wsUrl).build(), object : WebSocketListener() {
-            override fun onOpen(ws: WebSocket, response: Response) {
+        val request = Request.Builder().url(wsUrl).build()
+        webSocket = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
                 isConnected.value = true
-                ws.send("{\"type\": \"INIT_HOME\"}")
+                webSocket.send("{\"type\": \"INIT_HOME\"}")
             }
-            override fun onMessage(ws: WebSocket, text: String) {
-                val json = gson.fromJson(text, JsonObject::class.java)
-                when(json.get("type").asString) {
-                    "INIT_HOME" -> recTracks.value = parse(json.getAsJsonObject("data").getAsJsonArray("rec"))
-                    "SEARCH_RES" -> searchResults.value = parse(json.getAsJsonArray("data"))
-                    "SUGGEST_RES" -> suggestions.value = json.getAsJsonArray("data").map { it.asString }
-                }
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                try {
+                    val json = gson.fromJson(text, JsonObject::class.java)
+                    if (json.get("type").asString == "INIT_HOME") {
+                        val data = json.getAsJsonObject("data")
+                        recTracks.value = parseTracks(data.get("rec"))
+                    } else if (json.get("type").asString == "SEARCH_RES") {
+                        searchResults.value = parseTracks(json.get("data"))
+                    }
+                } catch (e: Exception) { e.printStackTrace() }
             }
         })
     }
 
-    fun initTimer() {
+    private fun parseTracks(obj: Any?): List<Track> {
+        val list = obj as? com.google.gson.JsonArray ?: return emptyList()
+        return list.map {
+            val o = it.asJsonObject
+            Track(o.get("id").asString, o.get("title").asString, o.get("artist").asString, o.get("thumb").asString)
+        }
+    }
+
+    // ТА САМАЯ ФУНКЦИЯ ТАЙМЕРА
+    fun startTimer() {
         CoroutineScope(Dispatchers.Main).launch {
-            while(true) {
+            while (true) {
                 player?.let {
                     if (it.isPlaying) {
                         currentPos.value = it.currentPosition
-                        totalDuration.value = it.duration.coerceAtLeast(0)
+                        totalDuration.value = it.duration.coerceAtLeast(0L)
                     }
                 }
                 delay(1000)
@@ -72,16 +83,17 @@ class MusicViewModel : ViewModel() {
         player?.play()
     }
 
-    fun search(q: String) { if(q.length > 2) webSocket?.send("{\"type\": \"SEARCH\", \"query\": \"$q\"}") }
-    fun getSuggestions(q: String) { if(q.length > 1) webSocket?.send("{\"type\": \"SUGGEST\", \"query\": \"$q\"}") }
-    fun toggleLike(t: Track) { /* Логика лайка */ }
+    // ТА САМАЯ ФУНКЦИЯ ПЕРЕМОТКИ
+    fun seekTo(pos: Float) {
+        player?.seekTo(pos.toLong())
+        currentPos.value = pos.toLong()
+    }
+
     fun formatTime(ms: Long): String {
         val s = (ms / 1000) % 60
         val m = (ms / (1000 * 60)) % 60
         return "%02d:%02d".format(m, s)
     }
-    private fun parse(arr: com.google.gson.JsonArray) = arr.map {
-        val o = it.asJsonObject
-        Track(o.get("id").asString, o.get("title").asString, o.get("artist").asString, o.get("thumb").asString)
-    }
+
+    fun search(q: String) { if(q.length > 2) webSocket?.send("{\"type\": \"SEARCH\", \"query\": \"$q\"}") }
 }
