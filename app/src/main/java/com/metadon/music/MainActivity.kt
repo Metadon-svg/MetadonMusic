@@ -1,29 +1,24 @@
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SearchTabUI(vm: MusicViewModel) {
-    var q by remember { mutableStateOf("") }
-    val sugs by vm.suggestions.collectAsState()
-    val res by vm.searchResults.collectAsState()
+package com.metadon.music
 
-    Column(Modifier.fillMaxSize()) {
-        TextField(
-            value = q, onValueChange = { q = it; vm.search(it) },
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            placeholder = { Text("Искать...") },
-            shape = RoundedCornerShape(12.dp),
-            colors = TextFieldDefaults.colors(focusedContainerColor = Color(0xFF1A1A1A), unfocusedContainerColor = Color(0xFF1A1A1A), focusedTextColor = Color.White),
-            trailingIcon = { if(q.isNotEmpty()) Icon(Icons.Default.Close, null, Modifier.clickable { q = "" }) }
-        )
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.material3.MaterialTheme
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
         
-        LazyColumn {
-            // ОТОБРАЖЕНИЕ ПОДСКАЗОК КАК В СКРИНШОТЕ
-            items(sugs) { text ->
-                Row(Modifier.fillMaxWidth().clickable { q = text; vm.search(text) }.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(text, color = Color.White)
-                    Icon(Icons.Default.ArrowOutward, null, tint = Color.Gray, modifier = Modifier.size(18.dp))
-                }
+        if (!Python.isStarted()) {
+            Python.start(AndroidPlatform(this))
+        }
+
+        setContent {
+            MaterialTheme {
+                MainAppScreen()
             }
-            items(res) { TrackRow(it) { vm.play(it) } }
         }
     }
 }
