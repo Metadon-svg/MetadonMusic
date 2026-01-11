@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class) // ГЛОБАЛЬНОЕ РАЗРЕШЕНИЕ
+@file:OptIn(ExperimentalMaterial3Api::class)
 
 package com.metadon.music
 
@@ -16,7 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.*
-import androidx.compose.ui.geometry.Offset // ВОТ ЭТОТ ИМПОРТ БЫЛ НУЖЕН
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -74,9 +74,6 @@ fun MainAppScreen() {
         FullPlayerUI(vm)
     }
 }
-
-// ... ОСТАЛЬНЫЕ КОМПОНЕНТЫ (ShimmerItem, HomeTabUI и т.д.) ...
-// Вставляю их полностью, чтобы ты мог скопировать весь файл целиком
 
 @Composable
 fun ShimmerItem() {
@@ -182,7 +179,9 @@ fun FullPlayerUI(vm: MusicViewModel) {
                 }
                 IconButton(onClick = { showMenu = true }) { Icon(Icons.Rounded.MoreVert, null, tint = Color.White) }
             }
+
             Spacer(Modifier.height(40.dp))
+
             if (playerTab == "track") {
                 Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().aspectRatio(1f).shadow(40.dp)) {
                     AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -206,8 +205,8 @@ fun FullPlayerUI(vm: MusicViewModel) {
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly, Alignment.CenterVertically) {
                     IconButton(onClick = { vm.toggleShuffle() }) { Icon(Icons.Rounded.Shuffle, null, tint = if(vm.isShuffle.value) Color.White else Color.Gray) }
                     IconButton(onClick = { vm.prev() }) { Icon(Icons.Rounded.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp)) }
-                    Surface(Modifier.size(80.dp).clickable { if(isPlaying) vm.player?.pause() else vm.player?.play() }, shape = CircleShape, color = Color.White) {
-                        Box(contentAlignment = Alignment.Center) { Icon(if(isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(40.dp)) }
+                    Surface(Modifier.size(80.dp).clickable { if(vm.isPlaying.value) vm.player?.pause() else vm.player?.play() }, shape = CircleShape, color = Color.White) {
+                        Box(contentAlignment = Alignment.Center) { Icon(if(vm.isPlaying.value) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(40.dp)) }
                     }
                     IconButton(onClick = { vm.next() }) { Icon(Icons.Rounded.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp)) }
                     IconButton(onClick = { vm.toggleRepeat() }) { Icon(Icons.Rounded.Repeat, null, tint = if(vm.repeatMode.value > 0) Color.White else Color.Gray) }
@@ -231,6 +230,7 @@ fun MenuItem(icon: ImageVector, text: String) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchTabUI(vm: MusicViewModel, q: String, onQ: (String) -> Unit) {
     val res by vm.searchResults.collectAsState()
@@ -269,7 +269,7 @@ fun LibraryTabUI(vm: MusicViewModel) {
 @Composable
 fun TrackRowUI(t: Track, vm: MusicViewModel) {
     Row(Modifier.fillMaxWidth().clickable { vm.play(t, listOf(t)) }.padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)))
+        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(t.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
