@@ -16,6 +16,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext // ТОТ САМЫЙ ИМПОРТ
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,7 +53,11 @@ fun MainAppScreen() {
         bottomBar = {
             if (!isFull) {
                 Column {
-                    AnimatedVisibility(visible = curTrack != null) {
+                    AnimatedVisibility(
+                        visible = curTrack != null,
+                        enter = fadeIn() + slideInVertically { it / 2 },
+                        exit = fadeOut() + slideOutVertically { it / 2 }
+                    ) {
                         curTrack?.let { MiniPlayerUI(it, isPlaying, vm) }
                     }
                     BottomNavUI(tab) { tab = it }
@@ -85,14 +90,13 @@ fun FullPlayerUI(vm: MusicViewModel) {
             .padding(horizontal = 24.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // --- ВЕРХНЯЯ ПАНЕЛЬ ---
         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
             IconButton(onClick = { vm.isPlayerFull.value = false }) {
                 Icon(Icons.Rounded.KeyboardArrowDown, null, tint = Color.White, modifier = Modifier.size(32.dp))
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("СЕЙЧАС ИГРАЕТ", color = Color.White.copy(0.6f), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                Text("\"${t.title}\" в Поиске", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("\"${t.title}\" из Поиска", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
             IconButton(onClick = { }) {
                 Icon(Icons.Rounded.MoreVert, null, tint = Color.White)
@@ -101,30 +105,20 @@ fun FullPlayerUI(vm: MusicViewModel) {
 
         Spacer(Modifier.height(40.dp))
 
-        // --- ОБЛОЖКА ---
         Card(
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .shadow(40.dp, RoundedCornerShape(12.dp), spotColor = Color.Black)
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f).shadow(40.dp, RoundedCornerShape(12.dp))
         ) {
             AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         }
 
         Spacer(Modifier.height(50.dp))
 
-        // --- ИНФО О ТРЕКЕ ---
         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(t.title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Тот самый значок Explicit [E]
-                    Surface(
-                        color = Color.Gray.copy(0.5f),
-                        shape = RoundedCornerShape(2.dp),
-                        modifier = Modifier.padding(end = 6.dp)
-                    ) {
+                    Surface(color = Color.Gray.copy(0.5f), shape = RoundedCornerShape(2.dp), modifier = Modifier.padding(end = 6.dp)) {
                         Text("E", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp))
                     }
                     Text(t.artist, color = Color.Gray, fontSize = 16.sp)
@@ -135,17 +129,11 @@ fun FullPlayerUI(vm: MusicViewModel) {
 
         Spacer(Modifier.height(30.dp))
 
-        // --- ПРОГРЕСС ---
         Slider(
             value = pos.toFloat(),
             valueRange = 0f..dur.toFloat().coerceAtLeast(1f),
             onValueChange = { vm.seekTo(it) },
-            colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = Color.White,
-                inactiveTrackColor = Color.White.copy(0.15f)
-            ),
-            modifier = Modifier.height(10.dp)
+            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(0.15f))
         )
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), Arrangement.SpaceBetween) {
             Text(vm.formatTime(pos), color = Color.Gray, fontSize = 12.sp)
@@ -154,43 +142,22 @@ fun FullPlayerUI(vm: MusicViewModel) {
 
         Spacer(Modifier.height(40.dp))
 
-        // --- УПРАВЛЕНИЕ ---
         Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly, Alignment.CenterVertically) {
             Icon(Icons.Rounded.Shuffle, null, tint = Color.White.copy(0.7f), modifier = Modifier.size(24.dp))
+            IconButton(onClick = { vm.player?.seekToPrevious() }) { Icon(Icons.Rounded.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(42.dp)) }
             
-            IconButton(onClick = { vm.player?.seekToPrevious() }) {
-                Icon(Icons.Rounded.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(42.dp))
-            }
-
-            // БОЛЬШАЯ БЕЛАЯ КНОПКА PLAY
-            Surface(
-                modifier = Modifier.size(76.dp).clickable { 
-                    if(isPlaying) vm.player?.pause() else vm.player?.play()
-                },
-                shape = CircleShape,
-                color = Color.White
-            ) {
+            Surface(modifier = Modifier.size(76.dp).clickable { if(isPlaying) vm.player?.pause() else vm.player?.play() }, shape = CircleShape, color = Color.White) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if(isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = null,
-                        tint = Color.Black,
-                        modifier = Modifier.size(38.dp)
-                    )
+                    Icon(imageVector = if(isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(38.dp))
                 }
             }
 
-            IconButton(onClick = { vm.player?.seekToNext() }) {
-                Icon(Icons.Rounded.SkipNext, null, tint = Color.White, modifier = Modifier.size(42.dp))
-            }
-
+            IconButton(onClick = { vm.player?.seekToNext() }) { Icon(Icons.Rounded.SkipNext, null, tint = Color.White, modifier = Modifier.size(42.dp)) }
             Icon(Icons.Rounded.Repeat, null, tint = Color.White.copy(0.7f), modifier = Modifier.size(24.dp))
         }
 
         Spacer(Modifier.weight(1f))
-
-        // --- НИЖНИЕ ИКОНКИ ---
-        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
             Icon(Icons.Rounded.Info, null, tint = Color.White.copy(0.8f), modifier = Modifier.size(24.dp))
             Icon(Icons.Rounded.PlaylistPlay, null, tint = Color.White.copy(0.8f), modifier = Modifier.size(28.dp))
         }
@@ -200,19 +167,19 @@ fun FullPlayerUI(vm: MusicViewModel) {
 @Composable
 fun MiniPlayerUI(t: Track, isPlaying: Boolean, vm: MusicViewModel) {
     Card(
-        modifier = Modifier.padding(8.dp).fillMaxWidth().height(60.dp).clickable { vm.isPlayerFull.value = true },
-        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp).fillMaxWidth().height(64.dp).clickable { vm.isPlayerFull.value = true },
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A))
     ) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)))
+            AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(t.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 Text(t.artist, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
             }
             IconButton(onClick = { if (isPlaying) vm.player?.pause() else vm.player?.play() }) {
-                Icon(if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.White)
+                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(32.dp))
             }
         }
     }
@@ -241,7 +208,7 @@ fun HomeTabUI(vm: MusicViewModel, tracks: List<Track>) {
 
 @Composable
 fun BottomNavUI(curr: String, onSelect: (String) -> Unit) {
-    NavigationBar(containerColor = Color.Black) {
+    NavigationBar(containerColor = Color.Black, toneElevation = 0.dp) {
         NavigationBarItem(selected = curr=="home", onClick={onSelect("home")}, icon={Icon(Icons.Default.Home, null)}, label={Text("Главная")})
         NavigationBarItem(selected = curr=="search", onClick={onSelect("search")}, icon={Icon(Icons.Default.Search, null)}, label={Text("Поиск")})
         NavigationBarItem(selected = curr=="lib", onClick={onSelect("lib")}, icon={Icon(Icons.Default.LibraryMusic, null)}, label={Text("Библиотека")})
