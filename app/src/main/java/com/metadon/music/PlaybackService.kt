@@ -10,7 +10,6 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        // Создаем плеер на уровне класса, чтобы он был доступен везде
         val newPlayer = ExoPlayer.Builder(this).build()
         player = newPlayer
         mediaSession = MediaSession.Builder(this, newPlayer).build()
@@ -21,7 +20,6 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        // Правильное освобождение ресурсов
         mediaSession?.let {
             it.player.release()
             it.release()
