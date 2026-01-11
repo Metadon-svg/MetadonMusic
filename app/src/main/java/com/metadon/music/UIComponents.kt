@@ -7,15 +7,15 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
-import androidx.compose.ui.draw.*
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -24,12 +24,24 @@ import androidx.media3.exoplayer.ExoPlayer
 @Composable
 fun MainAppScreen() {
     val vm: MusicViewModel = viewModel()
+    val ctx = LocalContext.current
+    
+    // Сбор данных в начале функции
     val curTrack by vm.currentTrack.collectAsState()
-    val isPlayerFull = vm.isPlayerFull.value
+    val recTracks by vm.recTracks.collectAsState()
+    val isPlaying = vm.isPlaying.value
+    val isFull = vm.isPlayerFull.value
+
     var tab by remember { mutableStateOf("home") }
 
     LaunchedEffect(Unit) {
-        vm.player = ExoPlayer.Builder(LocalContext.current).build()
+        if (vm.player == null) {
+            vm.player = ExoPlayer.Builder(ctx).build().apply {
+                addListener(object : androidx.media3.common.Player.Listener {
+                    override fun onIsPlayingChanged(p: Boolean) { vm.isPlaying.value = p }
+                })
+            }
+        }
         vm.connect()
         vm.startTimer()
     }
@@ -37,15 +49,10 @@ fun MainAppScreen() {
     Scaffold(
         containerColor = Color.Black,
         bottomBar = {
-            if (!isPlayerFull) {
+            if (!isFull) {
                 Column {
-                    // ПАРЯЩИЙ МИНИПЛЕЕР С АНИМАЦИЕЙ
-                    AnimatedVisibility(
-                        visible = curTrack != null,
-                        enter = slideInVertically { it } + fadeIn(),
-                        exit = slideOutVertically { it } + fadeOut()
-                    ) {
-                        curTrack?.let { MiniPlayerUI(it, vm) }
+                    AnimatedVisibility(visible = curTrack != null) {
+                        curTrack?.let { MiniPlayerUI(it, isPlaying, vm) }
                     }
                     BottomNavUI(tab) { tab = it }
                 }
@@ -53,36 +60,53 @@ fun MainAppScreen() {
         }
     ) { p ->
         Box(Modifier.padding(p).fillMaxSize()) {
-            when(tab) {
-                "home" -> HomeTabUI(vm)
+            when (tab) {
+                "home" -> HomeTabUI(vm, recTracks)
                 "search" -> SearchTabUI(vm)
                 "lib" -> LibraryTabUI(vm)
             }
         }
     }
 
-    AnimatedVisibility(visible = isPlayerFull, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
+    AnimatedVisibility(visible = isFull, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
         FullPlayerUI(vm)
     }
 }
 
 @Composable
-fun MiniPlayerUI(t: Track, vm: MusicViewModel) {
-    val isPlaying = vm.isPlaying.value
+fun TrackRowUI(t: Track, vm: MusicViewModel) {
+    Row(Modifier.fillMaxWidth().clickable { vm.play(t) }.padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)))
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(t.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(t.artist, color = Color.Gray, fontSize = 14.sp)
+        }
+        IconButton(onClick = { vm.toggleLike(t) }) { Icon(imageVector = Icons.Default.FavoriteBorder, contentDescription = null, tint = Color.White) }
+    }
+}
+
+@Composable
+fun HomeTabUI(vm: MusicViewModel, tracks: List<Track>) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { Text("Главная", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
+        items(tracks) { t -> TrackRowUI(t, vm) }
+    }
+}
+
+@Composable
+fun MiniPlayerUI(t: Track, isPlaying: Boolean, vm: MusicViewModel) {
     Card(
-        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().height(64.dp).clickable { vm.isPlayerFull.value = true },
+        modifier = Modifier.padding(8.dp).fillMaxWidth().height(64.dp).clickable { vm.isPlayerFull.value = true },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A))
     ) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)))
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(t.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(t.artist, color = Color.Gray, fontSize = 12.sp)
-            }
-            IconButton(onClick = { if(isPlaying) vm.player?.pause() else vm.player?.play(); vm.isPlaying.value = !isPlaying }) {
-                Icon(imageVector = if(isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
+            Text(t.title, color = Color.White, modifier = Modifier.weight(1f), maxLines = 1)
+            IconButton(onClick = { if (isPlaying) vm.player?.pause() else vm.player?.play() }) {
+                Icon(imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
             }
         }
     }
@@ -91,45 +115,39 @@ fun MiniPlayerUI(t: Track, vm: MusicViewModel) {
 @Composable
 fun FullPlayerUI(vm: MusicViewModel) {
     val t = vm.currentTrack.collectAsState().value ?: return
-    val isLiked = vm.likedTracks.collectAsState().value.any { it.id == t.id }
-    
+    val pos = vm.currentPos.value
+    val dur = vm.totalDuration.value
+    val isPlaying = vm.isPlaying.value
+
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF1E1E1E), Color.Black)))) {
         Column(Modifier.padding(24.dp).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             IconButton(onClick = { vm.isPlayerFull.value = false }, Modifier.align(Alignment.Start)) {
                 Icon(imageVector = Icons.Default.KeyboardArrowDown, contentDescription = null, tint = Color.White, modifier = Modifier.size(36.dp))
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(40.dp))
             AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(20.dp)), contentScale = ContentScale.Crop)
             Spacer(Modifier.height(32.dp))
-            
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(t.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text(t.artist, color = Color.Gray, fontSize = 18.sp)
-                }
-                IconButton(onClick = { vm.toggleLike(t) }) {
-                    Icon(imageVector = if(isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = null, tint = if(isLiked) Color.Red else Color.White)
-                }
-            }
+            Text(t.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text(t.artist, color = Color.Gray, fontSize = 18.sp)
             
             Spacer(Modifier.height(24.dp))
             Slider(
-                value = vm.currentPos.value.toFloat(),
-                valueRange = 0f..vm.totalDuration.value.toFloat().coerceAtLeast(1f),
+                value = pos.toFloat(),
+                valueRange = 0f..dur.toFloat().coerceAtLeast(1f),
                 onValueChange = { vm.seekTo(it) },
                 colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White)
             )
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                Text(formatTime(vm.currentPos.value), color = Color.Gray)
-                Text(formatTime(vm.totalDuration.value), color = Color.Gray)
+                Text(vm.formatTime(pos), color = Color.Gray)
+                Text(vm.formatTime(dur), color = Color.Gray)
             }
             
             Spacer(Modifier.height(40.dp))
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly, Alignment.CenterVertically) {
                 Icon(imageVector = Icons.Default.Shuffle, contentDescription = null, tint = Color.Gray)
                 Icon(imageVector = Icons.Default.SkipPrevious, contentDescription = null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.player?.seekToPrevious() })
-                Surface(Modifier.size(80.dp).clickable { if(vm.isPlaying.value) vm.player?.pause() else vm.player?.play(); vm.isPlaying.value = !vm.isPlaying.value }, shape = CircleShape, color = Color.White) {
-                    Box(contentAlignment = Alignment.Center) { Icon(imageVector = if(vm.isPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(48.dp)) }
+                Surface(Modifier.size(80.dp).clickable { if(isPlaying) vm.player?.pause() else vm.player?.play() }, shape = CircleShape, color = Color.White) {
+                    Box(contentAlignment = Alignment.Center) { Icon(imageVector = if(isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(48.dp)) }
                 }
                 Icon(imageVector = Icons.Default.SkipNext, contentDescription = null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.player?.seekToNext() })
                 Icon(imageVector = Icons.Default.Repeat, contentDescription = null, tint = Color.Gray)
@@ -142,8 +160,8 @@ fun FullPlayerUI(vm: MusicViewModel) {
 @Composable
 fun SearchTabUI(vm: MusicViewModel) {
     var q by remember { mutableStateOf("") }
-    val sugs by vm.suggestions.collectAsState()
     val res by vm.searchResults.collectAsState()
+    val sugs by vm.suggestions.collectAsState()
 
     Column(Modifier.fillMaxSize()) {
         TextField(
@@ -157,7 +175,7 @@ fun SearchTabUI(vm: MusicViewModel) {
         if (res.isEmpty()) {
             LazyColumn { items(sugs) { Text(it, color = Color.White, modifier = Modifier.fillMaxWidth().clickable { q = it; vm.search(it) }.padding(16.dp)) } }
         } else {
-            LazyColumn { items(res) { TrackRow(it) { vm.play(it) } } }
+            LazyColumn { items(res) { t -> TrackRowUI(t, vm) } }
         }
     }
 }
@@ -167,26 +185,7 @@ fun LibraryTabUI(vm: MusicViewModel) {
     val favs by vm.likedTracks.collectAsState()
     LazyColumn(Modifier.fillMaxSize()) {
         item { Text("Медиатека", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
-        item {
-            Row(Modifier.fillMaxWidth().clickable {}.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(56.dp).background(Color.Red, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-                    Icon(imageVector = Icons.Default.Favorite, contentDescription = null, tint = Color.White)
-                }
-                Spacer(Modifier.width(16.dp))
-                Column { Text("Любимые треки", color = Color.White, fontWeight = FontWeight.Bold); Text("${favs.size} треков", color = Color.Gray) }
-            }
-        }
-        item { Text("Твои лайки", color = Color.Gray, modifier = Modifier.padding(16.dp)) }
-        items(favs) { TrackRow(it) { vm.play(it) } }
-    }
-}
-
-@Composable
-fun TrackRow(t: Track, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)))
-        Spacer(Modifier.width(16.dp))
-        Column { Text(t.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1); Text(t.artist, color = Color.Gray) }
+        items(favs) { TrackRowUI(it, vm) }
     }
 }
 
@@ -197,10 +196,4 @@ fun BottomNavUI(curr: String, onSelect: (String) -> Unit) {
         NavigationBarItem(selected = curr=="search", onClick={onSelect("search")}, icon={Icon(imageVector = Icons.Default.Search, contentDescription = null)}, label={Text("Поиск")})
         NavigationBarItem(selected = curr=="lib", onClick={onSelect("lib")}, icon={Icon(imageVector = Icons.Default.LibraryMusic, contentDescription = null)}, label={Text("Библиотека")})
     }
-}
-
-fun formatTime(ms: Long): String {
-    val s = (ms / 1000) % 60
-    val m = (ms / (1000 * 60)) % 60
-    return "%02d:%02d".format(m, s)
 }
