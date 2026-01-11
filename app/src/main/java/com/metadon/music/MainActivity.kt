@@ -10,16 +10,7 @@ import com.chaquo.python.android.AndroidPlatform
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // Python для веса
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(this))
-        }
-
-        setContent {
-            MaterialTheme {
-                MainAppScreen()
-            }
-        }
+        if (!Python.isStarted()) Python.start(AndroidPlatform(this))
+        setContent { MaterialTheme { MainAppScreen() } }
     }
 }
