@@ -12,8 +12,10 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
-import androidx.compose.ui.draw.*
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.input.pointer.pointerInput // ДОБАВЛЕН ЭТОТ ИМПОРТ
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +33,7 @@ fun MainAppScreen() {
     
     val curTrack by vm.currentTrack.collectAsState()
     val recTracks by vm.recTracks.collectAsState()
+    val searchResults by vm.searchResults.collectAsState()
     val isPlaying = vm.isPlaying.value
     val isFull = vm.isPlayerFull.value
 
@@ -126,11 +129,12 @@ fun MiniPlayerUI(t: Track, isPlaying: Boolean, vm: MusicViewModel) {
 fun FullPlayerUI(vm: MusicViewModel) {
     val t = vm.currentTrack.collectAsState().value ?: return
     val lyrics by vm.currentLyrics.collectAsState()
-    val pos = vm.currentPos.longValue
-    val dur = vm.totalDuration.longValue
+    val pos = vm.currentPos.value
+    val dur = vm.totalDuration.value
     val isPlaying = vm.isPlaying.value
     var playerTab by remember { mutableStateOf("track") }
 
+    // pointerInput БЕЗ ОШИБОК
     Box(Modifier.fillMaxSize().background(Color(0xFF0D0D0D)).pointerInput(Unit) { }) {
         Column(Modifier.padding(24.dp).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
@@ -227,6 +231,27 @@ fun FullPlayerUI(vm: MusicViewModel) {
     }
 }
 
+@Composable
+fun TrackRowUI(t: Track, vm: MusicViewModel) {
+    Row(Modifier.fillMaxWidth().clickable { vm.play(t) }.padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)), contentScale = ContentScale.Crop)
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(t.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
+            Text(t.artist, color = Color.Gray, fontSize = 14.sp)
+        }
+        Icon(imageVector = Icons.Rounded.MoreVert, contentDescription = null, tint = Color.Gray)
+    }
+}
+
+@Composable
+fun HomeTabUI(vm: MusicViewModel, tracks: List<Track>) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { Text("Главная", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(20.dp)) }
+        items(tracks) { t -> TrackRowUI(t, vm) }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchTabUI(vm: MusicViewModel, q: String, onQ: (String) -> Unit) {
@@ -253,27 +278,6 @@ fun SearchTabUI(vm: MusicViewModel, q: String, onQ: (String) -> Unit) {
                 items(res) { t -> TrackRowUI(t, vm) }
             }
         }
-    }
-}
-
-@Composable
-fun TrackRowUI(t: Track, vm: MusicViewModel) {
-    Row(Modifier.fillMaxWidth().clickable { vm.play(t) }.padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)), contentScale = ContentScale.Crop)
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
-            Text(t.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
-            Text(t.artist, color = Color.Gray, fontSize = 14.sp)
-        }
-        Icon(imageVector = Icons.Rounded.MoreVert, contentDescription = null, tint = Color.Gray)
-    }
-}
-
-@Composable
-fun HomeTabUI(vm: MusicViewModel, tracks: List<Track>) {
-    LazyColumn(Modifier.fillMaxSize()) {
-        item { Text("Главная", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(20.dp)) }
-        items(tracks) { t -> TrackRowUI(t, vm) }
     }
 }
 
