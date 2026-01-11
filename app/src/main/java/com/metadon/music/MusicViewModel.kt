@@ -13,13 +13,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.*
 
 class MusicViewModel : ViewModel() {
-    private val baseUrl = "https://amhub.serveousercontent.com" // НЕ ЗАБУДЬ IP
+    private val baseUrl = "https://amhub.serveousercontent.com" // ЗАМЕНИ IP
     private val client = OkHttpClient()
     private val gson = Gson()
     private var webSocket: WebSocket? = null
     var player: ExoPlayer? = null
 
-    // Данные
     val recTracks = MutableStateFlow<List<Track>>(emptyList())
     val searchResults = MutableStateFlow<List<Track>>(emptyList())
     val suggestions = MutableStateFlow<List<String>>(emptyList())
@@ -29,19 +28,15 @@ class MusicViewModel : ViewModel() {
     
     val homeData = MutableStateFlow<Map<String, List<Track>>>(emptyMap())
 
-    // Состояния
     val isConnected = mutableStateOf(false)
     val isPlayerFull = mutableStateOf(false)
     val isPlaying = mutableStateOf(false)
     val isLoading = mutableStateOf(true)
-    
-    // Время
     val currentPos = mutableLongStateOf(0L)
     val totalDuration = mutableLongStateOf(0L)
     
-    // Режимы: 0=Off, 1=All, 2=One
-    val repeatMode = mutableStateOf(0)
     val isShuffle = mutableStateOf(false)
+    val repeatMode = mutableStateOf(0)
 
     private var queue: List<Track> = emptyList()
 
@@ -91,22 +86,19 @@ class MusicViewModel : ViewModel() {
 
     fun initPlayer(ctx: android.content.Context) {
         if (player == null) {
-            val newPlayer = ExoPlayer.Builder(ctx).build()
-            newPlayer.addListener(object : Player.Listener {
-                override fun onIsPlayingChanged(p: Boolean) { 
-                    isPlaying.value = p 
-                }
-                override fun onPlaybackStateChanged(state: Int) {
-                    if (state == Player.STATE_READY) {
-                        totalDuration.longValue = newPlayer.duration.coerceAtLeast(0L)
+            player = ExoPlayer.Builder(ctx).build().apply {
+                addListener(object : Player.Listener {
+                    override fun onIsPlayingChanged(p: Boolean) { isPlaying.value = p }
+                    override fun onPlaybackStateChanged(state: Int) {
+                        if (state == Player.STATE_READY) {
+                            totalDuration.longValue = duration.coerceAtLeast(0L)
+                        }
+                        if (state == Player.STATE_ENDED) {
+                            next()
+                        }
                     }
-                    // АВТО-ПЕРЕКЛЮЧЕНИЕ
-                    if (state == Player.STATE_ENDED) {
-                        next() 
-                    }
-                }
-            })
-            player = newPlayer
+                })
+            }
             startTimer()
         }
     }
@@ -129,92 +121,47 @@ class MusicViewModel : ViewModel() {
         if (contextList.isNotEmpty()) queue = contextList
         currentTrack.value = t
         isPlaying.value = true
-        
         t.isLiked = likedTracks.value.any { it.id == t.id }
         
         player?.setMediaItem(MediaItem.fromUri("$baseUrl/stream/${t.id}"))
         player?.prepare()
         player?.play()
-        
-        // Загрузка текста
-        loadLyrics(t.id)
-    }
-    
-    private fun loadLyrics(id: String) {
-        lyricsText.value = "Загрузка..."
-        // Тут можно добавить запрос к серверу: /lyrics/{id}
-        // Пока эмуляция:
-        CoroutineScope(Dispatchers.IO).launch {
-             // webSocket?.send("GET_LYRICS") - если реализуешь на сервере
-        }
     }
 
     fun next() {
-        // Повтор одной (2)
-        if (repeatMode.value == 2) {
-            player?.seekTo(0)
-            player?.play()
-            return
-        }
-
+        if (repeatMode.value == 2) { player?.seekTo(0); player?.play(); return }
         if (queue.isEmpty()) return
         val current = currentTrack.value
         var index = queue.indexOfFirst { it.id == current?.id }
         
-        if (isShuffle.value) {
-            index = (queue.indices).random()
-        } else {
-            index += 1
-        }
-
-        // Конец списка
+        if (isShuffle.value) index = (queue.indices).random() else index += 1
+        
         if (index >= queue.size) {
-            if (repeatMode.value == 1) index = 0 // Повтор всего
-            else {
-                isPlaying.value = false // Стоп
-                return 
-            }
+            if (repeatMode.value == 1) index = 0 else return
         }
         play(queue[index])
     }
 
     fun prev() {
-        // Если прошло больше 3 сек, просто в начало трека
-        if ((player?.currentPosition ?: 0) > 3000) {
-            player?.seekTo(0)
-            return
-        }
-        
         if (queue.isEmpty()) return
         val current = currentTrack.value
         val index = queue.indexOfFirst { it.id == current?.id }
         if (index > 0) play(queue[index - 1]) else player?.seekTo(0)
     }
 
-    fun seekTo(pos: Float) {
-        player?.seekTo(pos.toLong())
-        currentPos.longValue = pos.toLong()
-    }
-
+    fun seekTo(pos: Float) { player?.seekTo(pos.toLong()); currentPos.longValue = pos.toLong() }
     fun toggleShuffle() { isShuffle.value = !isShuffle.value }
     fun toggleRepeat() { repeatMode.value = (repeatMode.value + 1) % 3 }
 
     fun toggleLike(t: Track) {
         val newStatus = !t.isLiked
         t.isLiked = newStatus
-        // Обновляем локально сразу, чтобы интерфейс не тупил
         if (newStatus) likedTracks.value += t else likedTracks.value -= t
-        // Шлем на сервер
         webSocket?.send("{\"type\": \"LIKE\", \"user_id\": 1, \"id\": \"${t.id}\", \"title\": \"${t.title}\", \"artist\": \"${t.artist}\", \"thumb\": \"${t.cover}\"}")
     }
 
-    fun search(q: String) { 
-        if(q.length > 1) webSocket?.send("{\"type\": \"SEARCH\", \"query\": \"$q\"}") 
-    }
-    
-    fun suggest(q: String) { 
-        if(q.length > 1) webSocket?.send("{\"type\": \"SUGGEST\", \"query\": \"$q\"}") 
-    }
+    fun search(q: String) { if(q.length > 1) webSocket?.send("{\"type\": \"SEARCH\", \"query\": \"$q\"}") }
+    fun suggest(q: String) { if(q.length > 1) webSocket?.send("{\"type\": \"SUGGEST\", \"query\": \"$q\"}") }
 
     fun formatTime(ms: Long): String {
         val s = (ms / 1000) % 60
