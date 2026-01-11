@@ -15,9 +15,7 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, newPlayer).build()
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
-        return mediaSession
-    }
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
     override fun onDestroy() {
         mediaSession?.let {
