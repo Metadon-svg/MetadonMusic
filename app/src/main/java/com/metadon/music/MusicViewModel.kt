@@ -1,5 +1,6 @@
 package com.metadon.music
 
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.media3.common.MediaItem
@@ -18,7 +19,7 @@ class MusicViewModel : ViewModel() {
     private var webSocket: WebSocket? = null
     var player: ExoPlayer? = null
 
-    // --- ДАННЫЕ (StateFlow) ---
+    // Данные
     val recTracks = MutableStateFlow<List<Track>>(emptyList())
     val searchResults = MutableStateFlow<List<Track>>(emptyList())
     val suggestions = MutableStateFlow<List<String>>(emptyList())
@@ -26,30 +27,27 @@ class MusicViewModel : ViewModel() {
     val currentTrack = MutableStateFlow<Track?>(null)
     val lyricsText = MutableStateFlow("Загрузка текста...")
     
-    // Данные для главной
     val homeData = MutableStateFlow<Map<String, List<Track>>>(emptyMap())
 
-    // --- СОСТОЯНИЯ UI (MutableState) ---
+    // Состояния UI
     val isConnected = mutableStateOf(false)
     val isPlayerFull = mutableStateOf(false)
     val isPlaying = mutableStateOf(false)
     val isLoading = mutableStateOf(true)
     
-    // Время
-    val currentPos = mutableStateOf(0L)
-    val totalDuration = mutableStateOf(0L)
+    // Время (используем LongState для примитивов)
+    val currentPos = mutableLongStateOf(0L)
+    val totalDuration = mutableLongStateOf(0L)
     
-    // Режимы воспроизведения: 0 = Выкл, 1 = Повтор всего, 2 = Повтор одной
-    val repeatMode = mutableStateOf(0)
+    // Режимы
     val isShuffle = mutableStateOf(false)
+    val repeatMode = mutableStateOf(0)
 
-    // Очередь
     private var queue: List<Track> = emptyList()
 
     fun connect() {
         val wsUrl = baseUrl.replace("http", "ws").removeSuffix("/") + "/ws"
         val request = Request.Builder().url(wsUrl).build()
-        
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 isConnected.value = true
@@ -96,15 +94,16 @@ class MusicViewModel : ViewModel() {
         if (player == null) {
             player = ExoPlayer.Builder(ctx).build().apply {
                 addListener(object : Player.Listener {
-                    override fun onIsPlayingChanged(p: Boolean) { isPlaying.value = p }
-                    
-                    // АВТО-ПЕРЕКЛЮЧЕНИЕ ТРЕКОВ
+                    override fun onIsPlayingChanged(p: Boolean) { 
+                        isPlaying.value = p 
+                    }
                     override fun onPlaybackStateChanged(state: Int) {
                         if (state == Player.STATE_READY) {
-                            totalDuration.value = duration.coerceAtLeast(0L)
+                            // Явно обращаемся к длительности плеера
+                            totalDuration.longValue = this.duration.coerceAtLeast(0L)
                         }
                         if (state == Player.STATE_ENDED) {
-                            next() // Песня кончилась -> следующая
+                            next()
                         }
                     }
                 })
@@ -118,8 +117,8 @@ class MusicViewModel : ViewModel() {
             while (true) {
                 player?.let {
                     if (it.isPlaying) {
-                        currentPos.value = it.currentPosition
-                        totalDuration.value = it.duration.coerceAtLeast(0L)
+                        currentPos.longValue = it.currentPosition
+                        totalDuration.longValue = it.duration.coerceAtLeast(0L)
                     }
                 }
                 delay(1000)
@@ -131,39 +130,27 @@ class MusicViewModel : ViewModel() {
         if (contextList.isNotEmpty()) queue = contextList
         currentTrack.value = t
         isPlaying.value = true
-        
         t.isLiked = likedTracks.value.any { it.id == t.id }
-        // Эмуляция загрузки текста
-        lyricsText.value = "Загрузка текста..." 
-
+        lyricsText.value = "Загрузка текста..."
+        
         player?.setMediaItem(MediaItem.fromUri("$baseUrl/stream/${t.id}"))
         player?.prepare()
         player?.play()
+        
+        // Тут можно дернуть текст с сервера
     }
 
     fun next() {
-        // Если повтор одной (2) -> просто рестарт
-        if (repeatMode.value == 2) {
-            player?.seekTo(0)
-            player?.play()
-            return
-        }
-
+        if (repeatMode.value == 2) { player?.seekTo(0); player?.play(); return }
         if (queue.isEmpty()) return
         val current = currentTrack.value
         var index = queue.indexOfFirst { it.id == current?.id }
         
-        if (isShuffle.value) {
-            index = (queue.indices).random()
-        } else {
-            index += 1
-        }
-
-        if (index >= queue.size) {
-            if (repeatMode.value == 1) index = 0 // Повтор всего
-            else return // Конец очереди
-        }
+        if (isShuffle.value) index = (queue.indices).random() else index += 1
         
+        if (index >= queue.size) {
+            if (repeatMode.value == 1) index = 0 else return
+        }
         play(queue[index])
     }
 
@@ -176,16 +163,17 @@ class MusicViewModel : ViewModel() {
 
     fun seekTo(pos: Float) {
         player?.seekTo(pos.toLong())
-        currentPos.value = pos.toLong()
+        currentPos.longValue = pos.toLong()
     }
 
-    fun toggleShuffle() {
-        isShuffle.value = !isShuffle.value
-    }
-
-    fun toggleRepeat() {
-        // 0 -> 1 -> 2 -> 0
+    fun toggleShuffle() { isShuffle.value = !isShuffle.value; player?.shuffleModeEnabled = isShuffle.value }
+    fun toggleRepeat() { 
         repeatMode.value = (repeatMode.value + 1) % 3
+        player?.repeatMode = when(repeatMode.value) {
+            1 -> Player.REPEAT_MODE_ALL
+            2 -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
     }
 
     fun toggleLike(t: Track) {
