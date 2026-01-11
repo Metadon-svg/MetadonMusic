@@ -8,12 +8,14 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.geometry.Offset // ВОТ ЭТОТ ВАЖНЫЙ ИМПОРТ
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -77,11 +79,15 @@ fun MainAppScreen() {
     }
 }
 
-// --- СКЕЛЕТОН ЗАГРУЗКИ ---
+// --- СКЕЛЕТОН ЗАГРУЗКИ (Мерцающие прямоугольники) ---
 @Composable
 fun ShimmerItem() {
     val transition = rememberInfiniteTransition()
-    val translateAnim by transition.animateFloat(0f, 1000f, infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Restart))
+    val translateAnim by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Restart)
+    )
     val brush = Brush.linearGradient(
         colors = listOf(Color.DarkGray.copy(0.3f), Color.LightGray.copy(0.2f), Color.DarkGray.copy(0.3f)),
         start = Offset(translateAnim - 500f, translateAnim - 500f),
@@ -108,6 +114,7 @@ fun HomeTabUI(vm: MusicViewModel, data: Map<String, List<Track>>, loading: Boole
                 item {
                     LazyRow(contentPadding = PaddingValues(horizontal = 8.dp)) {
                         items(tracks) { t ->
+                            // Передаем список треков (tracks) в функцию play, чтобы работала очередь
                             Column(Modifier.width(160.dp).padding(8.dp).clickable { vm.play(t, tracks) }) {
                                 AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(144.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
                                 Text(t.title, color = Color.White, maxLines = 1, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
@@ -123,7 +130,6 @@ fun HomeTabUI(vm: MusicViewModel, data: Map<String, List<Track>>, loading: Boole
 
 @Composable
 fun MiniPlayerUI(t: Track, isPlaying: Boolean, vm: MusicViewModel) {
-    // Горизонтальный градиент от обложки
     val gradient = Brush.horizontalGradient(listOf(Color(0xFF2C2C2C), Color(0xFF121212)))
     Card(
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().height(64.dp).clickable { vm.isPlayerFull.value = true },
@@ -149,13 +155,13 @@ fun MiniPlayerUI(t: Track, isPlaying: Boolean, vm: MusicViewModel) {
 @Composable
 fun FullPlayerUI(vm: MusicViewModel) {
     val t = vm.currentTrack.collectAsState().value ?: return
-    val lyrics by vm.currentLyrics.collectAsState()
+    val lyrics by vm.lyricsText.collectAsState()
     val isPlaying = vm.isPlaying.value
     var playerTab by remember { mutableStateOf("track") }
     var showMenu by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize().background(Color.Black).pointerInput(Unit){}) {
-        // --- ФОН: РАЗМЫТАЯ ФОТКА С ЯРКОСТЬЮ ---
+        // Blur эффект на фоне
         AsyncImage(
             model = t.cover, contentDescription = null,
             modifier = Modifier.fillMaxSize().blur(80.dp).alpha(0.4f),
@@ -163,7 +169,6 @@ fun FullPlayerUI(vm: MusicViewModel) {
         )
 
         Column(Modifier.padding(24.dp).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            // Header
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                 IconButton(onClick = { vm.isPlayerFull.value = false }) {
                     Icon(Icons.Rounded.KeyboardArrowDown, null, tint = Color.White, modifier = Modifier.size(36.dp))
@@ -178,15 +183,13 @@ fun FullPlayerUI(vm: MusicViewModel) {
                 Box {
                     IconButton(onClick = { showMenu = true }) { Icon(Icons.Rounded.MoreVert, null, tint = Color.White) }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, modifier = Modifier.background(Color(0xFF1A1A1A))) {
-                        DropdownMenuItem(text = { Text("LRClib", color = Color.White) }, onClick = { showMenu = false })
-                        DropdownMenuItem(text = { Text("YTMusic расшифровка", color = Color.White) }, onClick = { showMenu = false })
+                        DropdownMenuItem(text = { Text("Скачать", color = Color.White) }, onClick = { showMenu = false })
                     }
                 }
             }
 
             Spacer(Modifier.height(40.dp))
 
-            // Main Content
             if (playerTab == "track") {
                 Card(shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth().aspectRatio(1f).shadow(40.dp, RoundedCornerShape(24.dp))) {
                     AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -199,68 +202,54 @@ fun FullPlayerUI(vm: MusicViewModel) {
                     }
                     IconButton(onClick = { vm.toggleLike(t) }) { Icon(Icons.Rounded.FavoriteBorder, null, tint = Color.White, modifier = Modifier.size(28.dp)) }
                 }
-            } else {
-                // --- ТЕКСТ КАК В ЮТУБ МУЗЫКЕ ---
-                LazyColumn(Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    items(lyrics) { line ->
-                        Text(
-                            text = line.text,
-                            color = Color.White,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            lineHeight = 36.sp,
-                            modifier = Modifier.padding(vertical = 16.dp).fillMaxWidth()
-                        )
-                    }
-                }
-            }
-
-            // Bottom Controls (always visible or mostly)
-            if (playerTab == "track") {
+                
                 Spacer(Modifier.height(24.dp))
                 Slider(
                     value = vm.currentPos.value.toFloat(),
                     valueRange = 0f..vm.totalDuration.value.toFloat().coerceAtLeast(1f),
                     onValueChange = { vm.seekTo(it) },
-                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(0.2f))
+                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White)
                 )
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                    Text(vm.formatTime(vm.currentPos.value), color = Color.White.copy(0.5f)); Text(vm.formatTime(vm.totalDuration.value), color = Color.White.copy(0.5f))
+                    Text(vm.formatTime(vm.currentPos.value), color = Color.White.copy(0.5f))
+                    Text(vm.formatTime(vm.totalDuration.value), color = Color.White.copy(0.5f))
                 }
+                
                 Spacer(Modifier.height(40.dp))
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly, Alignment.CenterVertically) {
                     Icon(Icons.Rounded.Shuffle, null, tint = Color.White.copy(0.5f))
+                    // Теперь prev() и next() существуют в ViewModel
                     Icon(Icons.Rounded.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.prev() })
-                    Surface(Modifier.size(80.dp).clickable { if(isPlaying) vm.player?.pause() else vm.player?.play(); vm.isPlaying.value = !isPlaying }, shape = CircleShape, color = Color.White) {
+                    Surface(Modifier.size(80.dp).clickable { if(isPlaying) vm.player?.pause() else vm.player?.play() }, shape = CircleShape, color = Color.White) {
                         Box(contentAlignment = Alignment.Center) { Icon(if(isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(48.dp)) }
                     }
                     Icon(Icons.Rounded.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp).clickable { vm.next() })
                     Icon(Icons.Rounded.Repeat, null, tint = Color.White.copy(0.5f))
                 }
-            }
-            
-            Spacer(Modifier.height(20.dp))
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                Icon(Icons.Rounded.Info, null, tint = Color.Gray)
-                Icon(Icons.Rounded.PlaylistPlay, null, tint = Color.White)
+            } else {
+                LazyColumn(Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    item {
+                        Text(lyrics, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, lineHeight = 36.sp, modifier = Modifier.padding(vertical = 16.dp))
+                    }
+                }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchTabUI(vm: MusicViewModel, q: String, onQ: (String) -> Unit) {
     val res by vm.searchResults.collectAsState()
     val sugs by vm.suggestions.collectAsState()
     Column(Modifier.fillMaxSize()) {
         TextField(
-            value = q, onValueChange = { onQ(it); vm.suggest(it); vm.search(it) },
+            value = q, onValueChange = { onQ(it); vm.search(it) },
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             placeholder = { Text("Поиск...") },
             shape = RoundedCornerShape(16.dp),
             colors = TextFieldDefaults.colors(focusedContainerColor = Color(0xFF1A1A1A), unfocusedContainerColor = Color(0xFF1A1A1A), focusedTextColor = Color.White),
-            leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.Gray) }
+            leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = Color.Gray) }
         )
         LazyColumn {
             if (res.isEmpty()) {
@@ -271,38 +260,32 @@ fun SearchTabUI(vm: MusicViewModel, q: String, onQ: (String) -> Unit) {
                     }
                 }
             } else {
-                items(res) { t -> TrackRowUI(t, vm) }
+                items(res) { t -> 
+                    Row(Modifier.fillMaxWidth().clickable { vm.play(t) }.padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)), contentScale = ContentScale.Crop)
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(t.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
+                            Text(t.artist, color = Color.Gray, fontSize = 14.sp)
+                        }
+                        Icon(imageVector = Icons.Rounded.MoreVert, contentDescription = null, tint = Color.Gray)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-fun TrackRowUI(t: Track, vm: MusicViewModel) {
-    Row(Modifier.fillMaxWidth().clickable { vm.play(t) }.padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)), contentScale = ContentScale.Crop)
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
-            Text(t.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
-            Text(t.artist, color = Color.Gray, fontSize = 14.sp)
-        }
-    }
-}
-
-@Composable
 fun LibraryTabUI(vm: MusicViewModel) {
-    val favs by vm.favoriteTracks.collectAsState()
-    LazyColumn(Modifier.fillMaxSize()) {
-        item { Text("Медиатека", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
-        items(favs) { t -> TrackRowUI(t, vm) }
-    }
+    Box(Modifier.fillMaxSize(), Alignment.Center) { Text("Медиатека", color = Color.Gray) }
 }
 
 @Composable
 fun BottomNavUI(curr: String, onSelect: (String) -> Unit) {
     NavigationBar(containerColor = Color.Black, tonalElevation = 0.dp) {
-        NavigationBarItem(selected = curr=="home", onClick={onSelect("home")}, icon={Icon(Icons.Default.Home, null)}, label={Text("Главная")})
-        NavigationBarItem(selected = curr=="search", onClick={onSelect("search")}, icon={Icon(Icons.Default.Search, null)}, label={Text("Поиск")})
-        NavigationBarItem(selected = curr=="lib", onClick={onSelect("lib")}, icon={Icon(Icons.Default.LibraryMusic, null)}, label={Text("Библиотека")})
+        NavigationBarItem(selected = curr=="home", onClick={onSelect("home")}, icon={Icon(imageVector = Icons.Default.Home, contentDescription = null)}, label={Text("Главная")})
+        NavigationBarItem(selected = curr=="search", onClick={onSelect("search")}, icon={Icon(imageVector = Icons.Default.Search, contentDescription = null)}, label={Text("Поиск")})
+        NavigationBarItem(selected = curr=="lib", onClick={onSelect("lib")}, icon={Icon(imageVector = Icons.Default.LibraryMusic, contentDescription = null)}, label={Text("Библиотека")})
     }
 }
