@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class) // ГЛОБАЛЬНОЕ РАЗРЕШЕНИЕ
+
 package com.metadon.music
 
 import androidx.compose.animation.*
@@ -14,9 +16,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.*
+import androidx.compose.ui.geometry.Offset // ВОТ ЭТОТ ИМПОРТ БЫЛ НУЖЕН
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput // ИМПОРТ ДОБАВЛЕН
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -31,11 +34,9 @@ import androidx.media3.exoplayer.ExoPlayer
 fun MainAppScreen() {
     val vm: MusicViewModel = viewModel()
     val ctx = LocalContext.current
-    
     val curTrack by vm.currentTrack.collectAsState()
     val homeData by vm.homeData.collectAsState()
     val isLoading = vm.isLoading.value
-    
     val isPlaying = vm.isPlaying.value
     val isFull = vm.isPlayerFull.value
 
@@ -52,11 +53,7 @@ fun MainAppScreen() {
         bottomBar = {
             if (!isFull) {
                 Column(Modifier.fillMaxWidth()) {
-                    AnimatedVisibility(
-                        visible = curTrack != null,
-                        enter = fadeIn() + slideInVertically { it / 2 },
-                        exit = fadeOut() + slideOutVertically { it / 2 }
-                    ) {
+                    AnimatedVisibility(visible = curTrack != null, enter = fadeIn() + slideInVertically { it / 2 }) {
                         curTrack?.let { MiniPlayerUI(it, isPlaying, vm) }
                     }
                     BottomNavUI(tab) { tab = it }
@@ -78,14 +75,15 @@ fun MainAppScreen() {
     }
 }
 
-// --- СКЕЛЕТОН ---
+// ... ОСТАЛЬНЫЕ КОМПОНЕНТЫ (ShimmerItem, HomeTabUI и т.д.) ...
+// Вставляю их полностью, чтобы ты мог скопировать весь файл целиком
+
 @Composable
 fun ShimmerItem() {
     val transition = rememberInfiniteTransition()
     val translateAnim by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1000f,
-        animationSpec = infiniteRepeatable(tween(1000, easing = LinearEasing), RepeatMode.Restart)
+        initialValue = 0f, targetValue = 1000f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Restart)
     )
     val brush = Brush.linearGradient(
         colors = listOf(Color.DarkGray.copy(0.3f), Color.LightGray.copy(0.2f), Color.DarkGray.copy(0.3f)),
@@ -101,17 +99,10 @@ fun HomeTabUI(vm: MusicViewModel, data: Map<String, List<Track>>, loading: Boole
         item {
             Row(Modifier.padding(16.dp).horizontalScroll(rememberScrollState())) {
                 listOf("Всё", "Релакс", "Сон", "Энергия").forEach {
-                    SuggestionChip(
-                        onClick = {},
-                        label = { Text(it, color = Color.White) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color(0xFF1E1E1E)),
-                        border = null,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
+                    SuggestionChip(onClick = {}, label = { Text(it, color = Color.White) }, colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color(0xFF1E1E1E)), border = null, modifier = Modifier.padding(end = 8.dp))
                 }
             }
         }
-
         if (loading) {
             item { Text("Загрузка...", color = Color.Gray, modifier = Modifier.padding(16.dp)) }
             item { LazyRow(contentPadding = PaddingValues(16.dp)) { items(3) { ShimmerItem() } } }
@@ -138,11 +129,7 @@ fun HomeTabUI(vm: MusicViewModel, data: Map<String, List<Track>>, loading: Boole
 
 @Composable
 fun MiniPlayerUI(t: Track, isPlaying: Boolean, vm: MusicViewModel) {
-    Box(
-        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp).fillMaxWidth().height(64.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .clickable { vm.isPlayerFull.value = true }
-    ) {
+    Box(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp).fillMaxWidth().height(64.dp).clip(RoundedCornerShape(12.dp)).clickable { vm.isPlayerFull.value = true }) {
         AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.fillMaxSize().blur(50.dp).alpha(0.7f), contentScale = ContentScale.Crop)
         Box(Modifier.fillMaxSize().background(Color.Black.copy(0.2f)))
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -163,14 +150,10 @@ fun MiniPlayerUI(t: Track, isPlaying: Boolean, vm: MusicViewModel) {
 fun FullPlayerUI(vm: MusicViewModel) {
     val t = vm.currentTrack.collectAsState().value ?: return
     val lyrics by vm.lyricsText.collectAsState()
-    val pos = vm.currentPos.value
-    val dur = vm.totalDuration.value
+    val pos = vm.currentPos.longValue
+    val dur = vm.totalDuration.longValue
     val isPlaying = vm.isPlaying.value
     val isLiked = t.isLiked
-    
-    // Состояния кнопок
-    val repeatMode = vm.repeatMode.value
-    val isShuffle = vm.isShuffle.value
     
     var playerTab by remember { mutableStateOf("track") }
     var showMenu by remember { mutableStateOf(false) }
@@ -199,15 +182,12 @@ fun FullPlayerUI(vm: MusicViewModel) {
                 }
                 IconButton(onClick = { showMenu = true }) { Icon(Icons.Rounded.MoreVert, null, tint = Color.White) }
             }
-
             Spacer(Modifier.height(40.dp))
-
             if (playerTab == "track") {
                 Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().aspectRatio(1f).shadow(40.dp)) {
                     AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 }
                 Spacer(Modifier.weight(1f))
-                
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(t.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
@@ -217,34 +197,20 @@ fun FullPlayerUI(vm: MusicViewModel) {
                         Icon(if(isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if(isLiked) Color.Red else Color.White, modifier = Modifier.size(32.dp))
                     }
                 }
-
                 Spacer(Modifier.height(24.dp))
                 Slider(value = pos.toFloat(), valueRange = 0f..dur.toFloat().coerceAtLeast(1f), onValueChange = { vm.seekTo(it) }, colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White))
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                    Text(vm.formatTime(pos), color = Color.LightGray, fontSize = 12.sp)
-                    Text(vm.formatTime(dur), color = Color.LightGray, fontSize = 12.sp)
+                    Text(vm.formatTime(pos), color = Color.LightGray, fontSize = 12.sp); Text(vm.formatTime(dur), color = Color.LightGray, fontSize = 12.sp)
                 }
-
                 Spacer(Modifier.height(20.dp))
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly, Alignment.CenterVertically) {
-                    // КНОПКА SHUFFLE (Меняет цвет)
-                    IconButton(onClick = { vm.toggleShuffle() }) { 
-                        Icon(Icons.Rounded.Shuffle, null, tint = if(isShuffle) Color.White else Color.Gray) 
-                    }
+                    IconButton(onClick = { vm.toggleShuffle() }) { Icon(Icons.Rounded.Shuffle, null, tint = if(vm.isShuffle.value) Color.White else Color.Gray) }
                     IconButton(onClick = { vm.prev() }) { Icon(Icons.Rounded.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp)) }
-                    
                     Surface(Modifier.size(80.dp).clickable { if(isPlaying) vm.player?.pause() else vm.player?.play() }, shape = CircleShape, color = Color.White) {
-                        Box(contentAlignment = Alignment.Center) { Icon(if(isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(48.dp)) }
+                        Box(contentAlignment = Alignment.Center) { Icon(if(isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(40.dp)) }
                     }
-                    
                     IconButton(onClick = { vm.next() }) { Icon(Icons.Rounded.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp)) }
-                    
-                    // КНОПКА REPEAT (Меняет иконку и цвет)
-                    IconButton(onClick = { vm.toggleRepeat() }) { 
-                        val icon = if (repeatMode == 2) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat
-                        val color = if (repeatMode == 0) Color.Gray else Color.White
-                        Icon(icon, null, tint = color) 
-                    }
+                    IconButton(onClick = { vm.toggleRepeat() }) { Icon(Icons.Rounded.Repeat, null, tint = if(vm.repeatMode.value > 0) Color.White else Color.Gray) }
                 }
             } else {
                 LazyColumn(Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -265,7 +231,6 @@ fun MenuItem(icon: ImageVector, text: String) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchTabUI(vm: MusicViewModel, q: String, onQ: (String) -> Unit) {
     val res by vm.searchResults.collectAsState()
@@ -304,7 +269,7 @@ fun LibraryTabUI(vm: MusicViewModel) {
 @Composable
 fun TrackRowUI(t: Track, vm: MusicViewModel) {
     Row(Modifier.fillMaxWidth().clickable { vm.play(t, listOf(t)) }.padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)))
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(t.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
@@ -317,8 +282,8 @@ fun TrackRowUI(t: Track, vm: MusicViewModel) {
 @Composable
 fun BottomNavUI(curr: String, onSelect: (String) -> Unit) {
     NavigationBar(containerColor = Color.Black, tonalElevation = 0.dp) {
-        NavigationBarItem(selected = curr=="home", onClick={onSelect("home")}, icon={Icon(imageVector = Icons.Default.Home, contentDescription = null)}, label={Text("Главная")})
-        NavigationBarItem(selected = curr=="search", onClick={onSelect("search")}, icon={Icon(imageVector = Icons.Default.Search, contentDescription = null)}, label={Text("Поиск")})
-        NavigationBarItem(selected = curr=="lib", onClick={onSelect("lib")}, icon={Icon(imageVector = Icons.Default.LibraryMusic, contentDescription = null)}, label={Text("Библиотека")})
+        NavigationBarItem(selected = curr=="home", onClick={onSelect("home")}, icon={Icon(Icons.Default.Home, null)}, label={Text("Главная")})
+        NavigationBarItem(selected = curr=="search", onClick={onSelect("search")}, icon={Icon(Icons.Default.Search, null)}, label={Text("Поиск")})
+        NavigationBarItem(selected = curr=="lib", onClick={onSelect("lib")}, icon={Icon(Icons.Default.LibraryMusic, null)}, label={Text("Библиотека")})
     }
 }
