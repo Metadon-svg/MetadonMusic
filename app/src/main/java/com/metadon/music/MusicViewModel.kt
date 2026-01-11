@@ -13,7 +13,7 @@ data class Track(val id: String, val title: String, val artist: String, val cove
 
 class MusicViewModel : ViewModel() {
     // === ВВЕДИ СВОЮ ССЫЛКУ ТУТ ===
-    private val baseUrl = "http://твой-айпи-или-домен:8000" 
+    private val baseUrl = "https://amhub.serveousercontent.com" 
     // =============================
 
     val recTracks = MutableStateFlow<List<Track>>(emptyList())
