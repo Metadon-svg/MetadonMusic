@@ -1,6 +1,6 @@
 package com.metadon.music
 
-import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -12,29 +12,35 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.*
 
 class MusicViewModel : ViewModel() {
-    private val baseUrl = "https://amhub.serveousercontent.com" // ПРОВЕРЬ IP
+    private val baseUrl = "https://amhub.serveousercontent.com" // ЗАМЕНИ НА СВОЙ IP
     private val client = OkHttpClient()
     private val gson = Gson()
     private var webSocket: WebSocket? = null
     var player: ExoPlayer? = null
 
-    // Данные
+    // --- ДАННЫЕ (StateFlow) ---
     val recTracks = MutableStateFlow<List<Track>>(emptyList())
     val searchResults = MutableStateFlow<List<Track>>(emptyList())
     val suggestions = MutableStateFlow<List<String>>(emptyList())
     val likedTracks = MutableStateFlow<List<Track>>(emptyList())
     val currentTrack = MutableStateFlow<Track?>(null)
     val lyricsText = MutableStateFlow("Загрузка текста...")
+    
+    // Данные для главной
+    val homeData = MutableStateFlow<Map<String, List<Track>>>(emptyMap())
 
-    // Состояния
+    // --- СОСТОЯНИЯ UI (MutableState) ---
     val isConnected = mutableStateOf(false)
     val isPlayerFull = mutableStateOf(false)
     val isPlaying = mutableStateOf(false)
+    val isLoading = mutableStateOf(true)
+    
+    // Время
     val currentPos = mutableStateOf(0L)
     val totalDuration = mutableStateOf(0L)
     
-    // Режимы: 0 = Выкл, 1 = Всё, 2 = Одна
-    val repeatMode = mutableStateOf(0) 
+    // Режимы воспроизведения: 0 = Выкл, 1 = Повтор всего, 2 = Повтор одной
+    val repeatMode = mutableStateOf(0)
     val isShuffle = mutableStateOf(false)
 
     // Очередь
@@ -43,6 +49,7 @@ class MusicViewModel : ViewModel() {
     fun connect() {
         val wsUrl = baseUrl.replace("http", "ws").removeSuffix("/") + "/ws"
         val request = Request.Builder().url(wsUrl).build()
+        
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 isConnected.value = true
@@ -55,7 +62,14 @@ class MusicViewModel : ViewModel() {
                     when (json.get("type").asString) {
                         "INIT_HOME" -> {
                             val data = json.getAsJsonObject("data")
-                            recTracks.value = parseTracks(data.getAsJsonArray("rec"))
+                            val rec = parseTracks(data.getAsJsonArray("rec"))
+                            val new = parseTracks(data.getAsJsonArray("new"))
+                            homeData.value = mapOf(
+                                "Для вас" to rec,
+                                "Новинки" to new,
+                                "В тренде" to rec.shuffled()
+                            )
+                            isLoading.value = false
                         }
                         "SEARCH_RES" -> searchResults.value = parseTracks(json.getAsJsonArray("data"))
                         "SUGGEST_RES" -> suggestions.value = json.getAsJsonArray("data").map { it.asString }
@@ -69,7 +83,12 @@ class MusicViewModel : ViewModel() {
     private fun parseTracks(arr: com.google.gson.JsonArray): List<Track> {
         return arr.map {
             val o = it.asJsonObject
-            Track(o.get("id").asString, o.get("title").asString, o.get("artist").asString, o.get("thumb").asString)
+            Track(
+                o.get("id").asString,
+                o.get("title").asString,
+                o.get("artist").asString,
+                o.get("thumb").asString
+            )
         }
     }
 
@@ -79,14 +98,13 @@ class MusicViewModel : ViewModel() {
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(p: Boolean) { isPlaying.value = p }
                     
-                    // ГЛАВНОЕ: Ловим окончание трека
+                    // АВТО-ПЕРЕКЛЮЧЕНИЕ ТРЕКОВ
                     override fun onPlaybackStateChanged(state: Int) {
                         if (state == Player.STATE_READY) {
                             totalDuration.value = duration.coerceAtLeast(0L)
                         }
                         if (state == Player.STATE_ENDED) {
-                            // Если песня кончилась -> включаем следующую
-                            next()
+                            next() // Песня кончилась -> следующая
                         }
                     }
                 })
@@ -115,22 +133,16 @@ class MusicViewModel : ViewModel() {
         isPlaying.value = true
         
         t.isLiked = likedTracks.value.any { it.id == t.id }
-        loadLyrics(t.id)
+        // Эмуляция загрузки текста
+        lyricsText.value = "Загрузка текста..." 
 
         player?.setMediaItem(MediaItem.fromUri("$baseUrl/stream/${t.id}"))
         player?.prepare()
         player?.play()
     }
 
-    private fun loadLyrics(id: String) {
-        lyricsText.value = "Загрузка текста..."
-        CoroutineScope(Dispatchers.IO).launch {
-            // Эмуляция или запрос к серверу
-        }
-    }
-
     fun next() {
-        // Если включен повтор ОДНОЙ песни (2), просто мотаем в начало
+        // Если повтор одной (2) -> просто рестарт
         if (repeatMode.value == 2) {
             player?.seekTo(0)
             player?.play()
@@ -141,22 +153,15 @@ class MusicViewModel : ViewModel() {
         val current = currentTrack.value
         var index = queue.indexOfFirst { it.id == current?.id }
         
-        // Если Shuffle включен, выбираем рандомный индекс
         if (isShuffle.value) {
             index = (queue.indices).random()
         } else {
             index += 1
         }
 
-        // Если дошли до конца
         if (index >= queue.size) {
-            if (repeatMode.value == 1) {
-                // Если повтор ВСЕГО (1) -> идем в начало
-                index = 0
-            } else {
-                // Если повтор ВЫКЛ (0) -> стоп
-                return 
-            }
+            if (repeatMode.value == 1) index = 0 // Повтор всего
+            else return // Конец очереди
         }
         
         play(queue[index])
@@ -166,7 +171,7 @@ class MusicViewModel : ViewModel() {
         if (queue.isEmpty()) return
         val current = currentTrack.value
         val index = queue.indexOfFirst { it.id == current?.id }
-        if (index > 0) play(queue[index - 1]) else play(queue[0])
+        if (index > 0) play(queue[index - 1]) else player?.seekTo(0)
     }
 
     fun seekTo(pos: Float) {
@@ -179,7 +184,7 @@ class MusicViewModel : ViewModel() {
     }
 
     fun toggleRepeat() {
-        // Цикл: 0 (Выкл) -> 1 (Всё) -> 2 (Одна) -> 0
+        // 0 -> 1 -> 2 -> 0
         repeatMode.value = (repeatMode.value + 1) % 3
     }
 
