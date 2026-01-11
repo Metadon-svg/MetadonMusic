@@ -14,6 +14,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight // ВОТ ЭТОТ ИМПОРТ БЫЛ ЗАБЫТ
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -62,19 +65,34 @@ fun MainAppScreen() {
         }
     }
 
-    AnimatedVisibility(visible = vm.isPlayerFull.value, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
+    AnimatedVisibility(
+        visible = vm.isPlayerFull.value,
+        enter = slideInVertically { it },
+        exit = slideOutVertically { it }
+    ) {
         FullPlayerUI(vm)
     }
 }
 
 @Composable
 fun TrackItemUI(t: Track, vm: MusicViewModel) {
-    Row(Modifier.fillMaxWidth().clickable { vm.play(t) }.padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(4.dp)))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { vm.play(t) }
+            .padding(16.dp, 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AsyncImage(
+            model = t.cover,
+            contentDescription = null,
+            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(4.dp)),
+            contentScale = ContentScale.Crop
+        )
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(t.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(t.artist, color = Color.Gray, fontSize = 14.sp)
+            Text(t.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(t.artist, color = Color.Gray, fontSize = 14.sp, maxLines = 1)
         }
         Icon(imageVector = Icons.Default.MoreVert, contentDescription = null, tint = Color.White)
     }
@@ -90,7 +108,10 @@ fun MiniPlayerUI(t: Track, isPlaying: Boolean, vm: MusicViewModel) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)))
             Spacer(Modifier.width(12.dp))
-            Text(t.title, color = Color.White, modifier = Modifier.weight(1f), maxLines = 1)
+            Column(Modifier.weight(1f)) {
+                Text(t.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(t.artist, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
+            }
             IconButton(onClick = { if (isPlaying) vm.player?.pause() else vm.player?.play() }) {
                 Icon(imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
             }
@@ -111,9 +132,9 @@ fun FullPlayerUI(vm: MusicViewModel) {
                 Icon(imageVector = Icons.Default.KeyboardArrowDown, contentDescription = null, tint = Color.White, modifier = Modifier.size(36.dp))
             }
             Spacer(Modifier.height(40.dp))
-            AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp)))
+            AsyncImage(model = t.cover, contentDescription = null, modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
             Spacer(Modifier.height(48.dp))
-            Text(t.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(t.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
             Text(t.artist, color = Color.White.copy(0.7f), fontSize = 18.sp)
             
             Spacer(Modifier.height(32.dp))
@@ -130,13 +151,13 @@ fun FullPlayerUI(vm: MusicViewModel) {
             Spacer(Modifier.height(40.dp))
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly, Alignment.CenterVertically) {
                 Icon(imageVector = Icons.Default.Shuffle, contentDescription = null, tint = Color.Gray)
-                Icon(imageVector = Icons.Default.SkipPrevious, contentDescription = null, tint = Color.White, modifier = Modifier.size(40.dp))
+                Icon(imageVector = Icons.Default.SkipPrevious, contentDescription = null, tint = Color.White, modifier = Modifier.size(40.dp).clickable { vm.player?.seekToPrevious() })
                 Surface(Modifier.size(72.dp).clickable { if(isPlaying) vm.player?.pause() else vm.player?.play() }, shape = CircleShape, color = Color.White) {
                     Box(contentAlignment = Alignment.Center) { 
                         Icon(imageVector = if(isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(40.dp)) 
                     }
                 }
-                Icon(imageVector = Icons.Default.SkipNext, contentDescription = null, tint = Color.White, modifier = Modifier.size(40.dp))
+                Icon(imageVector = Icons.Default.SkipNext, contentDescription = null, tint = Color.White, modifier = Modifier.size(40.dp).clickable { vm.player?.seekToNext() })
                 Icon(imageVector = Icons.Default.Repeat, contentDescription = null, tint = Color.Gray)
             }
         }
