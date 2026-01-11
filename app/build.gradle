@@ -24,6 +24,7 @@ android {
             pip {
                 install "ytmusicapi"
                 install "yt-dlp"
+                install "requests"
             }
         }
     }
